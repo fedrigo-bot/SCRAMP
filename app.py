@@ -96,12 +96,29 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 color: #94A3B8 !important;
             }
             /* Soften sidebar status alerts in dark mode */
-            [data-testid="stSidebar"] [data-testid="stAlert"] {
+            [data-testid="stSidebar"] [data-testid="stAlert"],
+            [data-testid="stSidebar"] [data-testid="stAlert"] > div,
+            [data-testid="stSidebar"] [role="alert"] {
                 background-color: rgba(16, 185, 129, 0.14) !important;
-                border: 1px solid rgba(16, 185, 129, 0.40) !important;
+                border-color: rgba(16, 185, 129, 0.40) !important;
             }
             [data-testid="stSidebar"] [data-testid="stAlert"] p {
                 color: #6EE7B7 !important;
+            }
+            /* Darken sidebar & main inputs/widgets if host theme defaults to light */
+            [data-testid="stSidebar"] [data-baseweb="select"] > div,
+            [data-testid="stSidebar"] [data-baseweb="input"],
+            [data-testid="stSidebar"] [data-baseweb="base-input"],
+            [data-testid="stSidebar"] input {
+                background-color: #1E293B !important;
+                color: #F1F5F9 !important;
+                border-color: #334155 !important;
+                -webkit-text-fill-color: #F1F5F9 !important;
+            }
+            [data-testid="stRadio"] p,
+            [data-testid="stRadio"] label,
+            [data-testid="stWidgetLabel"] p {
+                color: #E2E8F0 !important;
             }
             [data-testid="stTextInput"] button,
             button[aria-label*="password"] {
@@ -485,6 +502,7 @@ def _build_dual_hazard_chart(
             "text": f"Coupled Optical (Sentinel-2 L2A) + Thermal (SST) Hazard Time Series — {site_name}",
             "x": 0.0,
             "xanchor": "left",
+            "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
         },
         height=900,
         hovermode="x unified",
@@ -615,6 +633,7 @@ def _build_zscore_hazard_chart(
             "text": f"Standardized Robust Z-Score (MAD + IQR) — NDCI, NDTI & SST — {site_name}",
             "x": 0.0,
             "xanchor": "left",
+            "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
         },
         yaxis_title="Robust Relative Anomaly (+σ above Site Median)",
         xaxis_title="Sentinel-2 L2A Revisit Date",
