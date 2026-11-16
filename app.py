@@ -105,14 +105,19 @@ def _apply_theme_css(dark_mode: bool) -> None:
             [data-testid="stSidebar"] [data-testid="stAlert"] p {
                 color: #6EE7B7 !important;
             }
-            /* Darken sidebar & main inputs/widgets if host theme defaults to light */
+            /* Darken sidebar & main inputs/widgets with crisp visible borders */
             [data-testid="stSidebar"] [data-baseweb="select"] > div,
             [data-testid="stSidebar"] [data-baseweb="input"],
-            [data-testid="stSidebar"] [data-baseweb="base-input"],
+            [data-testid="stSidebar"] [data-baseweb="base-input"] {
+                background-color: #1E293B !important;
+                color: #F1F5F9 !important;
+                border: 1.5px solid #64748B !important;
+                border-radius: 6px !important;
+                -webkit-text-fill-color: #F1F5F9 !important;
+            }
             [data-testid="stSidebar"] input {
                 background-color: #1E293B !important;
                 color: #F1F5F9 !important;
-                border-color: #334155 !important;
                 -webkit-text-fill-color: #F1F5F9 !important;
             }
             [data-testid="stRadio"] p,
@@ -168,6 +173,21 @@ def _apply_theme_css(dark_mode: bool) -> None:
             [data-testid="stMetricValue"] {
                 color: #0F172A !important;
             }
+            [data-testid="stMetricDelta"] {
+                background-color: #E2E8F0 !important;
+                color: #0F172A !important;
+                border: 1px solid #CBD5E1 !important;
+                border-radius: 999px !important;
+                padding: 0.15rem 0.55rem !important;
+            }
+            [data-testid="stMetricDelta"] > div,
+            [data-testid="stMetricDelta"] span {
+                color: #0F172A !important;
+            }
+            [data-testid="stMetricDelta"] svg {
+                fill: #0F172A !important;
+                color: #0F172A !important;
+            }
             [data-testid="stCaptionContainer"] {
                 color: #475569 !important;
             }
@@ -179,13 +199,19 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 color: #0F172A !important;
             }
             [data-testid="stSidebar"] [data-baseweb="select"] > div,
-            [data-testid="stSidebar"] [data-baseweb="select"] > div > div,
             [data-testid="stSidebar"] [data-baseweb="input"],
-            [data-testid="stSidebar"] [data-baseweb="base-input"],
+            [data-testid="stSidebar"] [data-baseweb="base-input"] {
+                background-color: #FFFFFF !important;
+                color: #0F172A !important;
+                border: 1.5px solid #64748B !important;
+                border-radius: 6px !important;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+                -webkit-text-fill-color: #0F172A !important;
+            }
+            [data-testid="stSidebar"] [data-baseweb="select"] > div > div,
             [data-testid="stSidebar"] input {
                 background-color: #FFFFFF !important;
                 color: #0F172A !important;
-                border-color: #CBD5E1 !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
             [data-testid="stSidebar"] [data-baseweb="select"] svg {
