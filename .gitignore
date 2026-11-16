@@ -1,0 +1,22 @@
+# Secrets & Environment Files (NEVER commit)
+.streamlit/secrets.toml
+.env
+*.env
+.env.*
+*secret*.toml
+*.token
+.openeo*
+openeo-refresh-token*
+
+# Python / Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# OS / Logs
+.DS_Store
+Thumbs.db
+*.log
