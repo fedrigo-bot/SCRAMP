@@ -179,6 +179,7 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 color: #0F172A !important;
             }
             [data-testid="stSidebar"] [data-baseweb="select"] > div,
+            [data-testid="stSidebar"] [data-baseweb="select"] > div > div,
             [data-testid="stSidebar"] [data-baseweb="input"],
             [data-testid="stSidebar"] [data-baseweb="base-input"],
             [data-testid="stSidebar"] input {
@@ -186,6 +187,49 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 color: #0F172A !important;
                 border-color: #CBD5E1 !important;
                 -webkit-text-fill-color: #0F172A !important;
+            }
+            [data-testid="stSidebar"] [data-baseweb="select"] svg {
+                fill: #0F172A !important;
+                color: #0F172A !important;
+            }
+            [data-testid="stSidebar"] [role="switch"] {
+                background-color: #94A3B8 !important;
+            }
+            /* Expander cards & headers in Light Mode */
+            [data-testid="stExpander"],
+            [data-testid="stExpander"] details {
+                background-color: #FFFFFF !important;
+                border-color: #CBD5E1 !important;
+            }
+            [data-testid="stExpander"] summary,
+            [data-testid="stExpander"] details > summary {
+                background-color: #E2E8F0 !important;
+                color: #0F172A !important;
+            }
+            [data-testid="stExpander"] summary svg {
+                fill: #0F172A !important;
+                color: #0F172A !important;
+            }
+            /* Main area info/warning banners, download buttons, and JSON viewer */
+            .stApp [data-testid="stAlert"],
+            .stApp [data-testid="stAlert"] > div {
+                background-color: #EFF6FF !important;
+                border-color: #93C5FD !important;
+            }
+            .stApp [data-testid="stAlert"] p,
+            .stApp [data-testid="stAlert"] div {
+                color: #1E3A8A !important;
+            }
+            [data-testid="stDownloadButton"] button {
+                background-color: #FFFFFF !important;
+                color: #0F172A !important;
+                border: 1px solid #CBD5E1 !important;
+            }
+            [data-testid="stJson"] {
+                background-color: #F1F5F9 !important;
+                color: #0F172A !important;
+                border-radius: 6px;
+                padding: 0.5rem;
             }
             [data-testid="stSidebar"] [data-testid="stAlert"],
             [data-testid="stSidebar"] [data-testid="stAlert"] > div,
