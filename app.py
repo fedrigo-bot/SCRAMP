@@ -133,21 +133,68 @@ def _apply_theme_css(dark_mode: bool) -> None:
             """
             <style>
             .stApp {
-                background-color: #FFFFFF;
-                color: #1F2937;
+                background-color: #F8FAFC;
+                color: #0F172A;
             }
             [data-testid="stSidebar"] {
-                background-color: #F3F4F6;
+                background-color: #EEF2F6;
+                color: #0F172A;
+            }
+            [data-testid="stSidebar"] p,
+            [data-testid="stSidebar"] span,
+            [data-testid="stSidebar"] label,
+            [data-testid="stSidebar"] div,
+            [data-testid="stSidebar"] h1,
+            [data-testid="stSidebar"] h2,
+            [data-testid="stSidebar"] h3 {
+                color: #0F172A !important;
             }
             [data-testid="stHeader"] {
-                background-color: rgba(255, 255, 255, 0.85);
+                background-color: rgba(248, 250, 252, 0.90);
+            }
+            .stApp h1, .stApp h2, .stApp h3, .stApp h4,
+            [data-testid="stMarkdownContainer"] p,
+            [data-testid="stMarkdownContainer"] li {
+                color: #0F172A;
             }
             .stApp code, .stApp pre {
-                background-color: #F1F5F9 !important;
-                color: #1E293B !important;
-                border: 1px solid #E2E8F0 !important;
+                background-color: #E2E8F0 !important;
+                color: #0F172A !important;
+                border: 1px solid #CBD5E1 !important;
                 border-radius: 5px;
                 padding: 0.12rem 0.4rem;
+            }
+            [data-testid="stMetricLabel"] p,
+            [data-testid="stMetricValue"] {
+                color: #0F172A !important;
+            }
+            [data-testid="stCaptionContainer"] {
+                color: #475569 !important;
+            }
+            [data-testid="stRadio"] p,
+            [data-testid="stRadio"] label,
+            [data-testid="stWidgetLabel"] p,
+            [data-testid="stTabs"] button p,
+            [data-testid="stExpander"] summary p {
+                color: #0F172A !important;
+            }
+            [data-testid="stSidebar"] [data-baseweb="select"] > div,
+            [data-testid="stSidebar"] [data-baseweb="input"],
+            [data-testid="stSidebar"] [data-baseweb="base-input"],
+            [data-testid="stSidebar"] input {
+                background-color: #FFFFFF !important;
+                color: #0F172A !important;
+                border-color: #CBD5E1 !important;
+                -webkit-text-fill-color: #0F172A !important;
+            }
+            [data-testid="stSidebar"] [data-testid="stAlert"],
+            [data-testid="stSidebar"] [data-testid="stAlert"] > div,
+            [data-testid="stSidebar"] [role="alert"] {
+                background-color: #ECFDF5 !important;
+                border-color: #6EE7B7 !important;
+            }
+            [data-testid="stSidebar"] [data-testid="stAlert"] p {
+                color: #065F46 !important;
             }
             [data-testid="stTextInput"] button,
             button[aria-label*="password"] {
