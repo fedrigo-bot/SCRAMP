@@ -834,7 +834,7 @@ def main() -> None:
                     str(end_date),
                 )
                 is_session_cached = live_key in st.session_state["live_cache_keys"]
-                if not is_session_cached and st.session_state["live_api_calls"] >= 5:
+                if not is_session_cached and st.session_state["live_api_calls"] >= 15:
                     df = monitor.generate_demo_timeseries(
                         lat=site_meta["lat"],
                         lon=site_meta["lon"],
@@ -843,7 +843,7 @@ def main() -> None:
                         site_name=selected_site_name,
                     )
                     monitor.last_warning = (
-                        "Session rate limit reached (5/5 uncached live Copernicus API queries used). "
+                        "Session rate limit reached (15/15 uncached live Copernicus API queries used). "
                         "Displaying calibrated historical fallback data to protect shared API quota."
                     )
                 else:
