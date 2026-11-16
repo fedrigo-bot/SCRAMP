@@ -55,7 +55,8 @@ st.set_page_config(
 def _apply_theme_css(dark_mode: bool) -> None:
     """
     Inject CSS to allow seamless switching between Dark Mode and Light Mode
-    directly from the sidebar toggle.
+    directly from the sidebar toggle, including full contrast fixes for Streamlit Cloud
+    when base theme is light.
     """
     if dark_mode:
         st.markdown(
@@ -67,9 +68,40 @@ def _apply_theme_css(dark_mode: bool) -> None:
             }
             [data-testid="stSidebar"] {
                 background-color: #161B22;
+                color: #E6EDF3;
+            }
+            [data-testid="stSidebar"] p,
+            [data-testid="stSidebar"] span,
+            [data-testid="stSidebar"] label,
+            [data-testid="stSidebar"] div {
+                color: #E6EDF3;
             }
             [data-testid="stHeader"] {
                 background-color: rgba(14, 17, 23, 0.85);
+            }
+            /* Soften inline code pills instead of glaring white boxes */
+            .stApp code, .stApp pre {
+                background-color: #1E293B !important;
+                color: #93C5FD !important;
+                border: 1px solid #334155 !important;
+                border-radius: 5px;
+                padding: 0.12rem 0.4rem;
+            }
+            /* Ensure KPI cards & markdown remain legible on dark background */
+            [data-testid="stMetricLabel"] p,
+            [data-testid="stMetricValue"] {
+                color: #F8FAFC !important;
+            }
+            [data-testid="stCaptionContainer"] {
+                color: #94A3B8 !important;
+            }
+            /* Soften sidebar status alerts in dark mode */
+            [data-testid="stSidebar"] [data-testid="stAlert"] {
+                background-color: rgba(16, 185, 129, 0.14) !important;
+                border: 1px solid rgba(16, 185, 129, 0.40) !important;
+            }
+            [data-testid="stSidebar"] [data-testid="stAlert"] p {
+                color: #6EE7B7 !important;
             }
             [data-testid="stTextInput"] button,
             button[aria-label*="password"] {
@@ -92,6 +124,13 @@ def _apply_theme_css(dark_mode: bool) -> None:
             }
             [data-testid="stHeader"] {
                 background-color: rgba(255, 255, 255, 0.85);
+            }
+            .stApp code, .stApp pre {
+                background-color: #F1F5F9 !important;
+                color: #1E293B !important;
+                border: 1px solid #E2E8F0 !important;
+                border-radius: 5px;
+                padding: 0.12rem 0.4rem;
             }
             [data-testid="stTextInput"] button,
             button[aria-label*="password"] {
@@ -442,8 +481,12 @@ def _build_dual_hazard_chart(
     fig.update_xaxes(title_text="Satellite Revisit Date (S2 MSI + S3 SLSTR)", row=3, col=1)
 
     fig.update_layout(
-        title=f"Coupled Optical (Sentinel-2 L2A) + Thermal (SST) Hazard Time Series — {site_name}",
-        height=860,
+        title={
+            "text": f"Coupled Optical (Sentinel-2 L2A) + Thermal (SST) Hazard Time Series — {site_name}",
+            "x": 0.0,
+            "xanchor": "left",
+        },
+        height=900,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -451,12 +494,12 @@ def _build_dual_hazard_chart(
         font={"color": "#FAFAFA" if dark_mode else "#1F2937"},
         legend={
             "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.04,
-            "xanchor": "right",
-            "x": 1.0,
+            "yanchor": "top",
+            "y": -0.07,
+            "xanchor": "center",
+            "x": 0.5,
         },
-        margin={"l": 60, "r": 30, "t": 80, "b": 50},
+        margin={"l": 60, "r": 30, "t": 75, "b": 85},
     )
     return fig
 
@@ -568,11 +611,15 @@ def _build_zscore_hazard_chart(
         )
 
     fig.update_layout(
-        title=f"Standardized Robust Z-Score (MAD + IQR) — NDCI, NDTI & SST — {site_name}",
+        title={
+            "text": f"Standardized Robust Z-Score (MAD + IQR) — NDCI, NDTI & SST — {site_name}",
+            "x": 0.0,
+            "xanchor": "left",
+        },
         yaxis_title="Robust Relative Anomaly (+σ above Site Median)",
         xaxis_title="Sentinel-2 L2A Revisit Date",
         yaxis={"range": [y_min_z, y_max_z]},
-        height=480,
+        height=510,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -580,12 +627,12 @@ def _build_zscore_hazard_chart(
         font={"color": "#FAFAFA" if dark_mode else "#1F2937"},
         legend={
             "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.03,
-            "xanchor": "right",
-            "x": 1.0,
+            "yanchor": "top",
+            "y": -0.15,
+            "xanchor": "center",
+            "x": 0.5,
         },
-        margin={"l": 60, "r": 30, "t": 75, "b": 50},
+        margin={"l": 60, "r": 30, "t": 65, "b": 85},
     )
     return fig
 
