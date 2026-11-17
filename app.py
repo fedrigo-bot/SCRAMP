@@ -868,12 +868,6 @@ def _sync_dates_from_months() -> None:
     st.session_state["end_date_input"] = today
 
 
-def _load_historical_benchmark() -> None:
-    """Load the Apr–Sep 2025 historical Gravelines/SMR validation benchmark into the calendars."""
-    st.session_state["start_date_input"] = date(2025, 4, 1)
-    st.session_state["end_date_input"] = date(2025, 9, 30)
-
-
 def main() -> None:
     # --- Sidebar Controls ---
     with st.sidebar:
@@ -993,12 +987,6 @@ def main() -> None:
                 "⚠️ *Windows under 3 months (<85 days) are suited for short-term operational watch "
                 "but provide a limited sample size (N < 10 clear passes) for seasonal baseline medians.*"
             )
-
-        st.button(
-            "Load Historical Benchmark (Apr–Sep 2025)",
-            on_click=_load_historical_benchmark,
-            use_container_width=True,
-        )
 
         run_screening = st.button(
             "Run Environmental Hazard Screening",
