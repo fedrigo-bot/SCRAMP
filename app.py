@@ -1226,24 +1226,33 @@ def main() -> None:
     kpi_1, kpi_2, kpi_3, kpi_4, kpi_5 = st.columns(5)
 
     if is_present:
+        if days_since_last > 18 or cur_op_risk == "CLOUD_OBSCURED":
+            op_kpi_value = "⚪ OBSCURED"
+        elif cur_op_risk == "HIGH":
+            op_kpi_value = "🔴 ACTIVE"
+        elif cur_op_risk == "MODERATE":
+            op_kpi_value = "🟡 ACTIVE"
+        else:
+            op_kpi_value = "🟢 BASELINE"
+
         with kpi_1:
-            st.metric(
-                label="Current Operational Risk",
-                value=op_kpi_value,
-                delta=f"Latest pass: {days_since_last}d ago ({latest_pass_date})",
-                delta_color="inverse" if cur_op_risk in ("HIGH", "MODERATE") else "off",
-                help=(
-                    "Evaluated strictly from the Recent Operational Tail (last 21 days). "
-                    "Displays Cloud Obscured if >18 days without a clear Sentinel-2 pass."
-                ),
-            )
-        with kpi_2:
             st.metric(
                 label="Window Regime (Lookback)",
                 value=short_regime,
                 delta=f"{n_anom}/{n_tot} ({exc_pct:.0f}%) | Streak {max_streak}",
                 delta_color="off",
                 help=f"Full-window regime: {regime_profile}. Peak event on {peak_date_str}.",
+            )
+        with kpi_2:
+            st.metric(
+                label="Recent Operational Status (21d)",
+                value=op_kpi_value,
+                delta=f"Latest pass: {days_since_last}d ago ({latest_pass_date})",
+                delta_color="inverse" if cur_op_risk in ("HIGH", "MODERATE") else "normal",
+                help=(
+                    "Evaluated strictly from the Recent Operational Tail (last 21 days). "
+                    "Displays ⚪ OBSCURED if >18 days without a clear Sentinel-2 pass."
+                ),
             )
     else:
         with kpi_1:
