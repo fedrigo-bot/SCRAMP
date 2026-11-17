@@ -973,7 +973,7 @@ def main() -> None:
         explicit_gemini_key = ""
         with st.expander("🧠 Phase-2 AI RAG Settings (Optional)", expanded=False):
             if gemini_source in ("st.secrets", "os.environ"):
-                st.caption("Gemini 2.5 Flash RAG: Connected via Protected Secrets.")
+                st.caption("Gemini Flash RAG: Connected via Protected Secrets.")
             else:
                 explicit_gemini_key = st.text_input(
                     "Gemini API Key (Optional)",

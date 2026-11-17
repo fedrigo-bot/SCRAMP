@@ -868,6 +868,7 @@ def synthesize_hybrid_rag_cards(
     )
 
     api_key, _ = resolve_gemini_api_key(explicit_gemini_key)
+    fallback_reason = ""
     if api_key and len(base_cards) == 4:
         corpus_block = "\n".join(
             f"- [{c['id']}] {c['standard']} ({c['paragraph']}): {c['text']} | Verify: {c['verification_criteria']}"
@@ -892,7 +893,8 @@ RETRIEVED IAEA CORPUS:
 """
         try:
             raw_json, model_used = _call_gemini_25_flash(api_key, prompt, expect_json=True)
-            parsed = json.loads(raw_json)
+            cleaned_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_json.strip())
+            parsed = json.loads(cleaned_json)
             llm_cards = parsed.get("cards", [])
             if isinstance(llm_cards, list) and len(llm_cards) == 4:
                 merged_cards = []
@@ -918,11 +920,15 @@ RETRIEVED IAEA CORPUS:
                     "cards": merged_cards,
                     "retrieved_clauses": retrieved,
                 }
-        except Exception:  # noqa: BLE001
-            pass
+            fallback_reason = "Gemini returned unexpected JSON card structure."
+        except Exception as exc:  # noqa: BLE001
+            fallback_reason = f"Gemini fallback ({exc.__class__.__name__})."
 
+    badge = "Hybrid RAG Mode: Deterministic IAEA Corpus Synthesizer (Offline/Keyless)"
+    if fallback_reason:
+        badge = f"{badge} — {fallback_reason}"
     return {
-        "mode_badge": "Hybrid RAG Mode: Deterministic IAEA Corpus Synthesizer (Offline/Keyless)",
+        "mode_badge": badge,
         "ai_contextual_advisory": deterministic_advisory,
         "cards": base_cards,
         "retrieved_clauses": retrieved,
