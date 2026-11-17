@@ -632,6 +632,8 @@ def _build_dual_hazard_chart(
     fig.update_yaxes(title_text="NDTI ((B04-B03)/(B04+B03))", range=[y_min_ndti, y_max_ndti], row=2, col=1)
     fig.update_xaxes(title_text="Satellite Revisit Date (S2 MSI + S3 SLSTR)", row=3, col=1)
 
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     fig.update_layout(
         title={
             "text": f"Coupled Optical (Sentinel-2 L2A) + Thermal (SST) Hazard Time Series — {site_name}",
@@ -640,6 +642,8 @@ def _build_dual_hazard_chart(
             "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
         },
         height=900,
+        dragmode=False,
+        clickmode="event+select",
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -763,6 +767,8 @@ def _build_zscore_hazard_chart(
             )
         )
 
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     fig.update_layout(
         title={
             "text": f"Standardized Robust Z-Score (MAD + IQR) — NDCI, NDTI & SST — {site_name}",
@@ -774,6 +780,8 @@ def _build_zscore_hazard_chart(
         xaxis_title="Sentinel-2 L2A Revisit Date",
         yaxis={"range": [y_min_z, y_max_z]},
         height=510,
+        dragmode=False,
+        clickmode="event+select",
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
