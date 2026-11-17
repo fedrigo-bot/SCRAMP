@@ -949,7 +949,8 @@ def main() -> None:
         date_selection = st.date_input(
             "3. Screening Window (Sentinel-2 L2A)",
             value=(default_start, default_end),
-            help="Default 6-month window (May 1 – Oct 31, 2025) captures late-summer trophic & turbidity peaks.",
+            format="DD/MM/YYYY",
+            help="Default 6-month window (01/05/2025 – 31/10/2025) captures late-summer trophic & turbidity peaks.",
         )
 
         has_complete_dates = isinstance(date_selection, (list, tuple)) and len(date_selection) == 2
