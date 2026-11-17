@@ -299,15 +299,15 @@ def _build_intake_map(
     use_scattermap = hasattr(go, "Scattermap")
     TraceClass = go.Scattermap if use_scattermap else go.Scattermapbox
 
-    # Sentinel-2 L2A spatial aggregation polygon
+    # Sentinel-2 L2A spatial aggregation polygon (high-contrast cyan over satellite imagery)
     fig.add_trace(
         TraceClass(
             lat=box_lats,
             lon=box_lons,
             mode="lines",
             fill="toself",
-            fillcolor="rgba(0, 180, 216, 0.22)" if dark_mode else "rgba(0, 148, 255, 0.18)",
-            line={"color": "#00B4D8" if dark_mode else "#0094FF", "width": 2},
+            fillcolor="rgba(0, 240, 255, 0.18)",
+            line={"color": "#00F0FF", "width": 2.5},
             name=f"Sentinel-2 Offshore ROI (±{buffer_deg}° Buffer)",
             hoverinfo="name",
         )
@@ -319,9 +319,10 @@ def _build_intake_map(
             lat=[lat],
             lon=[lon],
             mode="markers+text",
-            marker={"size": 13, "color": "#FF4D6D" if dark_mode else "#E63946"},
+            marker={"size": 11, "color": "#FF3366"},
             text=[site_name.split(" (")[0]],
             textposition="top right",
+            textfont={"color": "#FFFFFF", "size": 12},
             name="Offshore Monitoring Point",
             hovertemplate=(
                 f"<b>{site_name}</b><br>"
@@ -332,12 +333,20 @@ def _build_intake_map(
     )
 
     map_config = {
-        "style": "carto-darkmatter" if dark_mode else "open-street-map",
+        "style": "white-bg",
         "center": {"lat": lat, "lon": lon},
-        "zoom": 11.0,
+        "zoom": 11.8,
+        "layers": [
+            {
+                "below": "traces",
+                "sourcetype": "raster",
+                "sourceattribution": "Esri, Maxar, Earthstar Geographics",
+                "source": [
+                    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                ],
+            }
+        ],
     }
-    legend_bg = "rgba(22, 27, 34, 0.85)" if dark_mode else "rgba(255, 255, 255, 0.85)"
-    legend_font_color = "#FAFAFA" if dark_mode else "#1F2937"
 
     layout_kwargs = {
         "template": "plotly_dark" if dark_mode else "plotly_white",
@@ -346,12 +355,14 @@ def _build_intake_map(
         "height": 270,
         "legend": {
             "orientation": "h",
-            "yanchor": "bottom",
-            "y": 0.02,
+            "yanchor": "top",
+            "y": 0.98,
             "xanchor": "left",
             "x": 0.02,
-            "bgcolor": legend_bg,
-            "font": {"color": legend_font_color},
+            "bgcolor": "rgba(15, 23, 42, 0.85)",
+            "bordercolor": "rgba(0, 240, 255, 0.4)",
+            "borderwidth": 1,
+            "font": {"color": "#F8FAFC", "size": 11},
         },
     }
     if use_scattermap:
