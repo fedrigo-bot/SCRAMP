@@ -1192,11 +1192,14 @@ def main() -> None:
     recent_mod = int((recent_slice["pass_risk"] == "MODERATE").sum())
     recent_elev = recent_high + recent_mod
     if recent_high >= 1:
-        recent_status_badge = "🔴 ACTIVE ANOMALY"
+        recent_status_badge = "🔴 ACTIVE"
+        recent_delta_label = f"ACTIVE ANOMALY ({recent_elev}/{len(recent_slice)} recent)"
     elif recent_mod >= 1:
-        recent_status_badge = "🟠 ACTIVE ANOMALY"
+        recent_status_badge = "🟠 ACTIVE"
+        recent_delta_label = f"ACTIVE ANOMALY ({recent_elev}/{len(recent_slice)} recent)"
     else:
-        recent_status_badge = "🟢 RETURNED TO BASELINE"
+        recent_status_badge = "🟢 BASELINE"
+        recent_delta_label = f"Returned to baseline (0/{len(recent_slice)} recent)"
 
     kpi_1, kpi_2, kpi_3, kpi_4, kpi_5 = st.columns(5)
     overall_risk = metrics["overall_scram_clogging_risk"]
@@ -1210,7 +1213,7 @@ def main() -> None:
         st.metric(
             label="Window Site Potential (IAEA SSR-1)",
             value=risk_badge,
-            delta=f"{elevated_cnt} of {total_passes} passes elevated ({high_cnt}H/{mod_cnt}M) | Peak {peak_date_str}",
+            delta=f"{elevated_cnt}/{total_passes} elevated | Peak {peak_date_str}",
             delta_color="off",
             help=(
                 "Historical siting susceptibility across the entire selected window (IAEA SSR-1). "
@@ -1221,10 +1224,7 @@ def main() -> None:
         st.metric(
             label="Recent Operational Status (30d / 3-Pass)",
             value=recent_status_badge,
-            delta=(
-                f"{recent_elev}/{len(recent_slice)} recent passes elevated | "
-                f"Latest: NDCI {metrics['latest_ndci']:+.3f} ({metrics['latest_ndci_zscore']:+.1f}σ)"
-            ),
+            delta=recent_delta_label,
             delta_color="inverse" if recent_elev >= 1 else "normal",
             help=(
                 "Evaluates only the most recent 30 days (or latest 3 passes) of the selected window "
