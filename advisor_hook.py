@@ -50,8 +50,10 @@ TROPHIC_THERMAL_DRIVER = (
     "-> High Gelatinous Zooplankton / Jellyfish Ingress Risk under IAEA SSG-18 Section 5)"
 )
 
-GEMINI_25_FLASH_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+GEMINI_FLASH_MODELS = (
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
 )
 
 # ---------------------------------------------------------------------------
@@ -774,26 +776,42 @@ def _call_gemini_25_flash(
     api_key: str,
     prompt_text: str,
     expect_json: bool = False,
-    timeout: int = 18,
-) -> str:
-    """Call Gemini 2.5 Flash REST API directly via `requests` (zero heavy SDK dependencies)."""
+    timeout: int = 25,
+) -> Tuple[str, str]:
+    """
+    Call Gemini Flash REST API directly via `requests` (zero heavy SDK dependencies).
+    Tries current active Flash models in order so new API keys never fail on 404.
+    Returns `(response_text, model_name)`.
+    """
     import requests
 
     gen_cfg: Dict[str, Any] = {"temperature": 0.2, "maxOutputTokens": 2048}
     if expect_json:
         gen_cfg["responseMimeType"] = "application/json"
 
-    resp = requests.post(
-        f"{GEMINI_25_FLASH_URL}?key={api_key}",
-        json={
-            "contents": [{"parts": [{"text": prompt_text}]}],
-            "generationConfig": gen_cfg,
-        },
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+    last_err: Optional[Exception] = None
+    for model_name in GEMINI_FLASH_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        try:
+            resp = requests.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt_text}]}],
+                    "generationConfig": gen_cfg,
+                },
+                timeout=timeout,
+            )
+            if resp.status_code == 404:
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"], model_name
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            continue
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("No Gemini Flash models available.")
 
 
 def synthesize_hybrid_rag_cards(
@@ -873,7 +891,7 @@ RETRIEVED IAEA CORPUS:
 {corpus_block}
 """
         try:
-            raw_json = _call_gemini_25_flash(api_key, prompt, expect_json=True)
+            raw_json, model_used = _call_gemini_25_flash(api_key, prompt, expect_json=True)
             parsed = json.loads(raw_json)
             llm_cards = parsed.get("cards", [])
             if isinstance(llm_cards, list) and len(llm_cards) == 4:
@@ -895,7 +913,7 @@ RETRIEVED IAEA CORPUS:
                 if coupled_note and "ESCALATION NOTE" not in advisory:
                     advisory = f"{advisory}{coupled_note}"
                 return {
-                    "mode_badge": "Hybrid RAG Mode: Gemini 2.5 Flash + IAEA Corpus",
+                    "mode_badge": f"Hybrid RAG Mode: Gemini ({model_used}) + IAEA Corpus",
                     "ai_contextual_advisory": advisory,
                     "cards": merged_cards,
                     "retrieved_clauses": retrieved,
@@ -950,9 +968,9 @@ RETRIEVED IAEA CLAUSES:
 INSPECTOR QUESTION: {question}
 """
         try:
-            answer = _call_gemini_25_flash(api_key, prompt, expect_json=False)
+            answer, model_used = _call_gemini_25_flash(api_key, prompt, expect_json=False)
             return {
-                "mode": "Gemini 2.5 Flash + IAEA Corpus",
+                "mode": f"Gemini ({model_used}) + IAEA Corpus",
                 "answer": answer.strip(),
                 "citations": citations,
             }
