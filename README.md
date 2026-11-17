@@ -60,4 +60,4 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-For **Live Copernicus CDSE** access without manual login, add `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` to `.streamlit/secrets.toml` (locally, git-ignored) or **Advanced settings → Secrets** on Streamlit Community Cloud. All live queries are cached for 24 hours (`ttl=86400`) and rate-limited to 15 uncached calls per session.
+For **Live Copernicus CDSE** access without manual login, add `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` to `.streamlit/secrets.toml` (locally, git-ignored) or **Advanced settings → Secrets** on Streamlit Community Cloud. The application operates strictly on live satellite & marine observations (fail-closed, zero synthetic data); live queries are cached for 24 hours (`ttl=86400`) and rate-limited to 15 uncached calls per session.

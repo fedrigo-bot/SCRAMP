@@ -408,19 +408,13 @@ class CopernicusWaterMonitor:
             clim_sigma=clim_ref.get("ndti_sigma"),
         )
 
-        # Thermal channel: guarantee a gap-free sst_celsius column
+        # Thermal channel: keep real observations only (never invent synthetic SST)
         if "sst_celsius" not in df.columns:
             df["sst_celsius"] = np.nan
         if "sst_source" not in df.columns:
-            df["sst_source"] = None
+            df["sst_source"] = "Unavailable"
         df["sst_celsius"] = pd.to_numeric(df["sst_celsius"], errors="coerce")
-        missing = df["sst_celsius"].isna()
-        if missing.any():
-            df.loc[missing, "sst_celsius"] = climatological_sst(
-                pd.DatetimeIndex(df.loc[missing, "date"]), self._site_name, self._lat
-            )
-            df.loc[missing, "sst_source"] = "Seasonal SST Climatology (gap fill)"
-        df["sst_source"] = df["sst_source"].fillna("Seasonal SST Climatology (gap fill)")
+        df["sst_source"] = df["sst_source"].fillna("Unavailable")
         df["sst_celsius"] = df["sst_celsius"].clip(*SST_CLAMP_RANGE).round(2)
 
         win_start = self._start_date or df["date"].min().strftime("%Y-%m-%d")
@@ -439,14 +433,17 @@ class CopernicusWaterMonitor:
             )
         hist_sst_med, hist_sst_sig, hist_sst_label = self.last_sst_baseline_info
 
-        df["sst_zscore"], _, _ = compute_robust_zscore_series(
-            df["sst_celsius"],
-            sigma_min=SIGMA_MIN["SST"],
-            clamp_range=SST_CLAMP_RANGE,
-            clim_median=hist_sst_med,
-            clim_sigma=hist_sst_sig,
-            strict_external_baseline=True,
-        )
+        if df["sst_celsius"].notna().any():
+            df["sst_zscore"], _, _ = compute_robust_zscore_series(
+                df["sst_celsius"],
+                sigma_min=SIGMA_MIN["SST"],
+                clamp_range=SST_CLAMP_RANGE,
+                clim_median=hist_sst_med,
+                clim_sigma=hist_sst_sig,
+                strict_external_baseline=True,
+            )
+        else:
+            df["sst_zscore"] = np.nan
 
         out_df = df[self.REQUIRED_COLUMNS].copy()
         out_df.attrs["sst_baseline_median"] = hist_sst_med
@@ -651,13 +648,10 @@ function evaluatePixel(s) {
             except Exception as exc:  # noqa: BLE001
                 notes.append(f"Open-Meteo Archive unavailable ({exc.__class__.__name__})")
 
-        # Short gaps: interpolate; long gaps: climatology
+        # Short cloud/orbit gaps only: interpolate up to 4 days between real observations
         sst = sst.interpolate(limit=4, limit_direction="both")
         src = src.ffill(limit=4).bfill(limit=4)
-        still = sst.isna()
-        if still.any():
-            sst[still] = climatological_sst(pd.DatetimeIndex(days[still]), self._site_name, lat)
-            src[still] = "Seasonal SST Climatology (gap fill)"
+        src = src.fillna("Unavailable")
 
         sst = sst.rolling(5, center=True, min_periods=1).mean().clip(*SST_CLAMP_RANGE)
         if notes:
@@ -871,18 +865,9 @@ function evaluatePixel(samples) {
 
         resolved_id, resolved_secret, _ = resolve_cdse_credentials(client_id, client_secret)
         if not resolved_id or not resolved_secret:
-            msg = (
-                "Live Copernicus CDSE mode was selected without OIDC Client ID / Secret. "
-                "Automatically falling back to Calibrated Historical Simulation (Demo Mode)."
-            )
-            self.last_warning = msg
-            warnings.warn(msg, RuntimeWarning)
-            return self.generate_demo_timeseries(
-                lat=lat,
-                lon=lon,
-                start_date=start_str,
-                end_date=end_str,
-                site_name=site_name,
+            raise RuntimeError(
+                "Copernicus CDSE OAuth2 credentials are missing. Configure CDSE_CLIENT_ID and "
+                "CDSE_CLIENT_SECRET in Streamlit Secrets or the sidebar to query live satellite data."
             )
 
         try:
@@ -1065,204 +1050,16 @@ function evaluatePixel(samples) {
             is_timeout = "timeout" in exc.__class__.__name__.lower() or "timed out" in str(exc).lower()
             if is_timeout:
                 msg = (
-                    f"Copernicus CDSE openEO synchronous request exceeded the {self.timeout}s timeout "
-                    f"({exc.__class__.__name__}). Gracefully falling back to Calibrated Historical Simulation (Demo Mode)."
+                    f"Copernicus CDSE live request exceeded the {self.timeout}s timeout "
+                    f"({exc.__class__.__name__}). No synthetic data was generated."
                 )
             else:
                 msg = (
-                    f"Copernicus openEO API connection or execution failed ({exc.__class__.__name__}: {exc}). "
-                    "Gracefully falling back to Calibrated Historical Simulation (Demo Mode)."
+                    f"Copernicus CDSE live query failed ({exc.__class__.__name__}: {exc}). "
+                    "No synthetic data was generated."
                 )
-            self.last_warning = msg
             logger.warning(msg)
-            warnings.warn(msg, RuntimeWarning)
-            return self.generate_demo_timeseries(
-                lat=lat,
-                lon=lon,
-                start_date=start_str,
-                end_date=end_str,
-                site_name=site_name,
-            )
-
-    def generate_demo_timeseries(
-        self,
-        lat: float,
-        lon: float,
-        start_date: Union[str, date, datetime],
-        end_date: Union[str, date, datetime],
-        site_name: str = "Selected Intake Site",
-    ) -> pd.DataFrame:
-        """
-        Mode B: Deterministic, realistic 5-day revisit Sentinel-2 L2A time-series
-        generator calibrated to coastal nuclear intake seasonal dynamics:
-        - Baseline winter/spring NDCI ~ -0.08 to -0.04 and NDTI ~ -0.35 to -0.25
-        - Summer biological/turbidity surge peaks reaching -0.015 to +0.045 for NDCI
-          and -0.17 to -0.08 for NDTI
-        - Realistic offshore valid_water_coverage_pct (75%–95% on clear passes)
-        """
-        start_dt = pd.to_datetime(start_date)
-        end_dt = pd.to_datetime(end_date)
-        if end_dt <= start_dt:
-            end_dt = start_dt + pd.Timedelta(days=30)
-        self._site_name = site_name
-        self._lat = float(lat)
-        self._lon = float(lon)
-        self._start_date = start_dt.strftime("%Y-%m-%d")
-        self._end_date = end_dt.strftime("%Y-%m-%d")
-        self._use_live_sst_baseline = False
-        self.last_sst_baseline_info = None
-
-        revisit_dates = pd.date_range(start=start_dt, end=end_dt, freq="5D")
-        if len(revisit_dates) == 0:
-            revisit_dates = pd.DatetimeIndex([start_dt])
-
-        seed_val = int(abs(round(lat * 10000) * 31 + round(lon * 10000) * 17)) % (2**31 - 1)
-        rng = np.random.default_rng(seed_val)
-        sst_rng = np.random.default_rng(seed_val + 7)  # independent stream: keeps NDCI/NDTI demo unchanged
-
-        site_key = resolve_site_key(site_name)
-        site_lower = site_name.lower()
-        if site_key == "gravelines":
-            base_ndci = -0.082
-            bloom_amp = 0.072   # Summer peaks around -0.015 to +0.005 (Z > +2.2σ)
-            peak_doy = 222      # Mid-August (Aug 10-14 trophic precursor & jellyfish ingress window)
-            bloom_width = 18.0
-            base_ndti = -0.325  # Southern North Sea baseline
-            turbidity_amp = 0.165  # Peaks around -0.165 to -0.145
-            mean_water_cov = 86.0
-        elif site_key == "oskarshamn":
-            base_ndci = -0.052
-            bloom_amp = 0.088   # Baltic cyanobacterial bloom peaking around +0.034 to +0.042
-            peak_doy = 218      # Early-to-mid August
-            bloom_width = 21.0
-            base_ndti = -0.275  # Baltic coastal baseline
-            turbidity_amp = 0.175  # Peaks around -0.105 to -0.085
-            mean_water_cov = 88.0
-        elif site_key == "darlington":
-            # Lake Ontario (freshwater): summer Cladophora algal detachment + nearshore resuspension
-            base_ndci = -0.064
-            bloom_amp = 0.082   # Summer benthic Cladophora & phytoplankton peak (~ +0.015 to +0.030)
-            peak_doy = 212      # Late July / early August
-            bloom_width = 19.0
-            base_ndti = -0.305
-            turbidity_amp = 0.165  # Nearshore resuspension events
-            mean_water_cov = 87.0
-        elif site_key == "linglong":
-            # Beibu Gulf (Hainan subtropical): dinoflagellate red tides & monsoon turbidity plumes
-            base_ndci = -0.048
-            bloom_amp = 0.092   # Subtropical red-tide peaks (~ +0.035 to +0.050)
-            peak_doy = 205      # Mid-late July / monsoon transition
-            bloom_width = 22.0
-            base_ndti = -0.260
-            turbidity_amp = 0.185  # Monsoon runoff & coastal sediment plumes (~ -0.09)
-            mean_water_cov = 84.0
-        elif site_key == "wylfa":
-            # Irish Sea (macro-tidal): high background tidal turbidity + spring phytoplankton surge
-            base_ndci = -0.074
-            bloom_amp = 0.068   # Moderate summer bloom + strong spring bloom
-            peak_doy = 228      # Mid-to-late August
-            bloom_width = 20.0
-            base_ndti = -0.220  # Elevated macro-tidal suspended sediment baseline
-            turbidity_amp = 0.180  # Peaks around -0.07 to -0.09 during equinoctial tides/storms
-            mean_water_cov = 83.0
-        elif site_key == "viru_nigula":
-            # Gulf of Finland (brackish Baltic): intense late-summer cyanobacterial scums
-            base_ndci = -0.045
-            bloom_amp = 0.098   # Cyanobacterial surface scum peaks (~ +0.045 to +0.060)
-            peak_doy = 214      # Early August
-            bloom_width = 18.0
-            base_ndti = -0.270
-            turbidity_amp = 0.160  # Coastal runoff / organic detritus
-            mean_water_cov = 86.0
-        else:
-            # Custom Candidate SMR Coordinates
-            lat_factor = np.clip((60.0 - abs(lat)) / 30.0, 0.7, 1.2)
-            base_ndci = -0.058 * lat_factor
-            bloom_amp = 0.095 * lat_factor  # Peaks around +0.035 to +0.045
-            peak_doy = 225
-            bloom_width = 20.0
-            base_ndti = -0.350
-            turbidity_amp = 0.170  # Peaks around -0.18 to -0.15
-            mean_water_cov = 89.0
-
-        records = []
-        for ts in revisit_dates:
-            doy = ts.dayofyear
-
-            # Simulate occasional cloud-cover dropout (~14% of passes rejected by cloud filter)
-            cloud_roll = rng.uniform(0.0, 1.0)
-            if cloud_roll < 0.14 and len(revisit_dates) > 6:
-                continue
-
-            # Primary late-summer biological bloom curve (Gaussian in day-of-year)
-            primary_bloom = bloom_amp * np.exp(-0.5 * ((doy - peak_doy) / bloom_width) ** 2)
-            # Spring phytoplankton / diatom pulse around mid-April / early May (DOY ~ 112)
-            if site_key == "gravelines":
-                spring_scale = 1.15
-            elif site_key == "wylfa":
-                spring_scale = 0.95  # Strong Irish Sea spring phytoplankton surge
-            else:
-                spring_scale = 0.45
-            spring_bloom = (spring_scale * bloom_amp) * np.exp(-0.5 * ((doy - 112) / 15.0) ** 2)
-
-            ndci_noise = rng.normal(0.0, 0.011)
-            ndci_val = base_ndci + primary_bloom + spring_bloom + ndci_noise
-
-            # Turbidity (NDTI) responds to both biological organic detritus and autumn storm mixing
-            autumn_storm_pulse = (0.78 * turbidity_amp) * np.exp(
-                -0.5 * ((doy - 270) / 24.0) ** 2
-            )
-            bio_turbidity_coupling = 0.62 * primary_bloom
-            ndti_noise = rng.normal(0.0, 0.018)
-            ndti_val = (
-                base_ndti
-                + bio_turbidity_coupling
-                + autumn_storm_pulse
-                + ndti_noise
-            )
-
-            # Realistic offshore valid cloud-free water coverage (75% - 95%)
-            valid_water_pct = float(
-                np.clip(rng.normal(mean_water_cov, 5.0), 75.0, 96.5)
-            )
-
-            # Seasonal SST (cosine climatology peaking mid-August) + small synoptic noise
-            sst_val = float(climatological_sst(pd.DatetimeIndex([ts]), site_name, lat)[0])
-            sst_val += sst_rng.normal(0.0, 0.25)
-
-            records.append(
-                {
-                    "date": ts,
-                    "ndci": round(
-                        float(np.clip(ndci_val, INDEX_CLAMP_RANGE[0], INDEX_CLAMP_RANGE[1])),
-                        4,
-                    ),
-                    "ndti": round(
-                        float(np.clip(ndti_val, INDEX_CLAMP_RANGE[0], INDEX_CLAMP_RANGE[1])),
-                        4,
-                    ),
-                    "sst_celsius": round(float(np.clip(sst_val, *SST_CLAMP_RANGE)), 2),
-                    "valid_water_coverage_pct": round(valid_water_pct, 1),
-                    "data_source": "Calibrated Sentinel-2 L2A Historical Simulation",
-                    "sst_source": "Simulated SST Climatology (Demo)",
-                }
-            )
-
-        df = pd.DataFrame(records)
-        if df.empty:
-            df = pd.DataFrame(
-                [
-                    {
-                        "date": start_dt,
-                        "ndci": round(base_ndci, 4),
-                        "ndti": round(base_ndti, 4),
-                        "valid_water_coverage_pct": 88.0,
-                        "data_source": "Calibrated Sentinel-2 L2A Historical Simulation",
-                    }
-                ]
-            )
-
-        return self._finalize_dataframe(df)
+            raise RuntimeError(msg) from exc
 
 
 def compute_site_regime_profile(

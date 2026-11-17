@@ -889,48 +889,35 @@ def main() -> None:
         cloud_id, cloud_secret, cred_source = resolve_cdse_credentials()
         has_cloud_secrets = cred_source in ("st.secrets", "os.environ")
 
-        data_mode = st.radio(
-            "1. Satellite Data Source",
-            options=[
-                "Demo / Calibrated Historical Simulation (Instant)",
-                "Live Copernicus CDSE API (openEO)",
-            ],
-            index=1 if has_cloud_secrets else 0,
-            help=(
-                "Choose between instant marine-calibrated Sentinel-2 simulation "
-                "or live execution against Copernicus Data Space Ecosystem (CDSE)."
-            ),
-        )
-
+        st.markdown("**1. Copernicus CDSE Live Data Feed**")
         client_id = cloud_id or ""
         client_secret = cloud_secret or ""
-        if data_mode == "Live Copernicus CDSE API (openEO)":
-            if has_cloud_secrets:
-                st.success("Copernicus CDSE Live API: Connected (Protected Cloud Secrets)")
-            else:
-                st.info(
-                    "Copernicus Data Space Ecosystem (CDSE) OAuth2 credentials required for live queries. "
-                    f"Applies cloud filter (≤40%), water coverage gate (≥{MIN_VALID_WATER_PCT:.0f}%), "
-                    "and dark-pixel radiometric guard."
-                )
-                client_id = st.text_input(
-                    "CDSE Client ID",
-                    value=DEFAULT_CDSE_CLIENT_ID,
-                    type="password",
-                    help=(
-                        "Generate an OIDC Client ID in the Copernicus Data Space Dashboard "
-                        "(https://shapps.dataspace.copernicus.eu/dashboard/#/account/settings)."
-                    ),
-                )
-                client_secret = st.text_input(
-                    "CDSE Client Secret",
-                    value=DEFAULT_CDSE_CLIENT_SECRET,
-                    type="password",
-                    help=(
-                        "Copy the corresponding Client Secret generated under OAuth Clients "
-                        "in your Copernicus Data Space Ecosystem account settings."
-                    ),
-                )
+        if has_cloud_secrets:
+            st.success("Copernicus CDSE Live API: Connected (Protected Cloud Secrets)")
+        else:
+            st.info(
+                "Copernicus Data Space Ecosystem (CDSE) OAuth2 credentials required for live queries. "
+                f"Applies cloud filter (≤40%), water coverage gate (≥{MIN_VALID_WATER_PCT:.0f}%), "
+                "and dark-pixel radiometric guard."
+            )
+            client_id = st.text_input(
+                "CDSE Client ID",
+                value=DEFAULT_CDSE_CLIENT_ID,
+                type="password",
+                help=(
+                    "Generate an OIDC Client ID in the Copernicus Data Space Dashboard "
+                    "(https://shapps.dataspace.copernicus.eu/dashboard/#/account/settings)."
+                ),
+            )
+            client_secret = st.text_input(
+                "CDSE Client Secret",
+                value=DEFAULT_CDSE_CLIENT_SECRET,
+                type="password",
+                help=(
+                    "Copy the corresponding Client Secret generated under OAuth Clients "
+                    "in your Copernicus Data Space Ecosystem account settings."
+                ),
+            )
 
         st.divider()
         selected_site_name = st.selectbox(
@@ -1032,9 +1019,9 @@ def main() -> None:
                     help="Optional: enables Gemini Flash synthesis. Leave blank for offline Deterministic IAEA Corpus RAG.",
                 )
 
-    # --- Strict Button-Gated Execution Lifecycle ---
+    # --- Strict Button-Gated Live-Only Execution Lifecycle ---
     pending_signature = (
-        data_mode,
+        "LIVE_CDSE",
         selected_site_name,
         round(float(site_meta["lat"]), 4),
         round(float(site_meta["lon"]), 4),
@@ -1050,31 +1037,24 @@ def main() -> None:
         with st.sidebar:
             st.info("⏳ Window updated — click 'Run Environmental Hazard Screening' to execute scan.")
 
-    monitor = CopernicusWaterMonitor()
+    live_fetch_error: str = ""
     if (run_screening and end_date >= start_date) or is_initial_load:
-        with st.spinner("Processing Sentinel-2 L2A reflectances, Sentinel-3/marine SST fusion & Dual-Gate Z-Scores..."):
-            if data_mode == "Live Copernicus CDSE API (openEO)":
-                live_key = (
-                    selected_site_name,
-                    round(float(site_meta["lat"]), 4),
-                    round(float(site_meta["lon"]), 4),
-                    str(start_date),
-                    str(end_date),
+        with st.spinner("Querying live Copernicus Sentinel-2 L2A & Sentinel-3/Marine SST..."):
+            live_key = (
+                selected_site_name,
+                round(float(site_meta["lat"]), 4),
+                round(float(site_meta["lon"]), 4),
+                str(start_date),
+                str(end_date),
+            )
+            is_session_cached = live_key in st.session_state["live_cache_keys"]
+            if not is_session_cached and st.session_state["live_api_calls"] >= 15:
+                live_fetch_error = (
+                    "Session rate limit reached (15/15 uncached live Copernicus API queries used). "
+                    "No synthetic data is generated in safety-critical mode; reload the session to reset quota."
                 )
-                is_session_cached = live_key in st.session_state["live_cache_keys"]
-                if not is_session_cached and st.session_state["live_api_calls"] >= 15:
-                    df = monitor.generate_demo_timeseries(
-                        lat=site_meta["lat"],
-                        lon=site_meta["lon"],
-                        start_date=start_date,
-                        end_date=end_date,
-                        site_name=selected_site_name,
-                    )
-                    monitor.last_warning = (
-                        "Session rate limit reached (15/15 uncached live Copernicus API queries used). "
-                        "Displaying calibrated historical fallback data to protect shared API quota."
-                    )
-                else:
+            else:
+                try:
                     df, live_warn = _fetch_live_cached(
                         site_name=selected_site_name,
                         lat_rounded=round(float(site_meta["lat"]), 4),
@@ -1085,41 +1065,38 @@ def main() -> None:
                         _client_id=client_id,
                         _client_secret=client_secret,
                     )
-                    monitor.last_warning = live_warn
                     if not is_session_cached and not live_warn:
                         st.session_state["live_api_calls"] += 1
                     st.session_state["live_cache_keys"].add(live_key)
-            else:
-                df = monitor.generate_demo_timeseries(
-                    lat=site_meta["lat"],
-                    lon=site_meta["lon"],
-                    start_date=start_date,
-                    end_date=end_date,
-                    site_name=selected_site_name,
-                )
 
-            report = generate_site_baseline_report(
-                site_name=selected_site_name,
-                site_meta=site_meta,
-                df=df,
-                date_range=(start_date, end_date),
-            )
+                    report = generate_site_baseline_report(
+                        site_name=selected_site_name,
+                        site_meta=site_meta,
+                        df=df,
+                        date_range=(start_date, end_date),
+                    )
+                    st.session_state["active_screening_result"] = {
+                        "df": df,
+                        "report": report,
+                        "warning": live_warn,
+                        "signature": pending_signature,
+                        "site_meta": copy.deepcopy(site_meta),
+                    }
+                except Exception as exc:  # noqa: BLE001
+                    live_fetch_error = str(exc)
 
-            st.session_state["active_screening_result"] = {
-                "df": df,
-                "report": report,
-                "warning": monitor.last_warning,
-                "signature": pending_signature,
-                "site_meta": copy.deepcopy(site_meta),
-            }
+    _apply_theme_css(dark_mode)
+
+    if live_fetch_error:
+        st.error(f"🛑 **Live Satellite Data Unavailable:** {live_fetch_error}")
+        if "active_screening_result" not in st.session_state:
+            st.stop()
 
     active_res = st.session_state["active_screening_result"]
     df: pd.DataFrame = active_res["df"]
     report: dict = active_res["report"]
     fallback_warning = active_res.get("warning")
     active_site_meta: dict = active_res.get("site_meta", site_meta)
-
-    _apply_theme_css(dark_mode)
 
     # --- Main Dashboard Header ---
     st.title(f"🛰️ {TOOL_NAME}")
