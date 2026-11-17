@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy
 import importlib
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -849,6 +849,20 @@ def _answer_inspector_qa_cached(
     )
 
 
+def _sync_dates_from_months() -> None:
+    """Update Start/End calendar inputs ONLY when the user clicks + / - on Last X Months."""
+    months = int(st.session_state.get("lookback_months", 3))
+    today = date.today()
+    st.session_state["start_date_input"] = today - timedelta(days=int(months * 30.4375))
+    st.session_state["end_date_input"] = today
+
+
+def _load_historical_benchmark() -> None:
+    """Load the Apr–Sep 2025 historical Gravelines/SMR validation benchmark into the calendars."""
+    st.session_state["start_date_input"] = date(2025, 4, 1)
+    st.session_state["end_date_input"] = date(2025, 9, 30)
+
+
 def main() -> None:
     # --- Sidebar Controls ---
     with st.sidebar:
@@ -944,25 +958,49 @@ def main() -> None:
             site_meta["lon"] = float(custom_lon)
 
         st.divider()
-        default_start = date(2025, 5, 1)
-        default_end = date(2025, 10, 31)
-        date_selection = st.date_input(
-            "3. Screening Window (Sentinel-2 L2A)",
-            value=(default_start, default_end),
-            format="DD/MM/YYYY",
-            help="Default 6-month window (01/05/2025 – 31/10/2025) captures late-summer trophic & turbidity peaks.",
+        st.markdown("**3. Screening Window (Sentinel-2 L2A + SST)**")
+        today_dt = date.today()
+        st.session_state.setdefault("start_date_input", today_dt - timedelta(days=90))
+        st.session_state.setdefault("end_date_input", today_dt)
+
+        st.number_input(
+            "Quick Window: Last X Months",
+            min_value=1,
+            max_value=24,
+            value=3,
+            step=1,
+            key="lookback_months",
+            on_change=_sync_dates_from_months,
+            help="Use – / + to set the lookback window relative to today without wiping manual calendar edits on reruns.",
         )
 
-        has_complete_dates = isinstance(date_selection, (list, tuple)) and len(date_selection) == 2
-        if has_complete_dates:
-            start_date, end_date = date_selection[0], date_selection[1]
-        elif isinstance(date_selection, (list, tuple)) and len(date_selection) == 1:
-            start_date = date_selection[0]
-            end_date = st.session_state.get("last_valid_end_date", default_end)
-            st.caption("📅 *Seleziona la data di fine nel calendario per aggiornare il periodo...*")
-        else:
-            start_date, end_date = default_start, default_end
-            has_complete_dates = True
+        d_col1, d_col2 = st.columns(2)
+        with d_col1:
+            start_date = st.date_input(
+                "Start Date",
+                key="start_date_input",
+                format="DD/MM/YYYY",
+            )
+        with d_col2:
+            end_date = st.date_input(
+                "End Date",
+                key="end_date_input",
+                format="DD/MM/YYYY",
+            )
+
+        if end_date < start_date:
+            st.warning("End Date must be on or after Start Date.")
+        elif (end_date - start_date).days < 85:
+            st.caption(
+                "⚠️ *Windows under 3 months (<85 days) are suited for short-term operational watch "
+                "but provide a limited sample size (N < 10 clear passes) for seasonal baseline medians.*"
+            )
+
+        st.button(
+            "Load Historical Benchmark (Apr–Sep 2025)",
+            on_click=_load_historical_benchmark,
+            use_container_width=True,
+        )
 
         run_screening = st.button(
             "Run Environmental Hazard Screening",
@@ -980,11 +1018,11 @@ def main() -> None:
                     "Gemini API Key (Optional)",
                     value="",
                     type="password",
-                    help="Optional: enables Gemini 2.5 Flash synthesis. Leave blank for offline Deterministic IAEA Corpus RAG.",
+                    help="Optional: enables Gemini Flash synthesis. Leave blank for offline Deterministic IAEA Corpus RAG.",
                 )
 
-    # --- Execute Pipeline (Auto-triggers when parameters/dates change or button is clicked) ---
-    query_signature = (
+    # --- Strict Button-Gated Execution Lifecycle ---
+    pending_signature = (
         data_mode,
         selected_site_name,
         round(float(site_meta["lat"]), 4),
@@ -992,15 +1030,17 @@ def main() -> None:
         str(start_date),
         str(end_date),
     )
-    params_changed = has_complete_dates and (
-        query_signature != st.session_state.get("scram_query_signature")
-    )
 
     st.session_state.setdefault("live_api_calls", 0)
     st.session_state.setdefault("live_cache_keys", set())
 
+    is_initial_load = "active_screening_result" not in st.session_state
+    if not is_initial_load and pending_signature != st.session_state["active_screening_result"]["signature"]:
+        with st.sidebar:
+            st.info("⏳ Window updated — click 'Run Environmental Hazard Screening' to execute scan.")
+
     monitor = CopernicusWaterMonitor()
-    if run_screening or params_changed or "scram_df" not in st.session_state:
+    if (run_screening and end_date >= start_date) or is_initial_load:
         with st.spinner("Processing Sentinel-2 L2A reflectances, Sentinel-3/marine SST fusion & Dual-Gate Z-Scores..."):
             if data_mode == "Live Copernicus CDSE API (openEO)":
                 live_key = (
@@ -1054,15 +1094,19 @@ def main() -> None:
                 date_range=(start_date, end_date),
             )
 
-            st.session_state["scram_df"] = df
-            st.session_state["scram_report"] = report
-            st.session_state["scram_warning"] = monitor.last_warning
-            st.session_state["scram_query_signature"] = query_signature
-            st.session_state["last_valid_end_date"] = end_date
+            st.session_state["active_screening_result"] = {
+                "df": df,
+                "report": report,
+                "warning": monitor.last_warning,
+                "signature": pending_signature,
+                "site_meta": copy.deepcopy(site_meta),
+            }
 
-    df: pd.DataFrame = st.session_state["scram_df"]
-    report: dict = st.session_state["scram_report"]
-    fallback_warning = st.session_state.get("scram_warning")
+    active_res = st.session_state["active_screening_result"]
+    df: pd.DataFrame = active_res["df"]
+    report: dict = active_res["report"]
+    fallback_warning = active_res.get("warning")
+    active_site_meta: dict = active_res.get("site_meta", site_meta)
 
     _apply_theme_css(dark_mode)
 
@@ -1091,7 +1135,7 @@ def main() -> None:
             f"- **Facility / Deployment Type:** `{profile['reactor_type']}`\n"
             f"- **Cooling System Architecture:** `{profile['cooling_system']}`\n"
             f"- **Offshore ROI Coordinates:** `{profile['coordinates']['lat']:.4f}° N, "
-            f"{profile['coordinates']['lon']:.4f}° E` (Buffer: `±{site_meta['buffer_deg']}°`)\n"
+            f"{profile['coordinates']['lon']:.4f}° E` (Buffer: `±{active_site_meta['buffer_deg']}°`)\n"
             f"- **Active Data Feed:** `{report['report_metadata']['data_source_mode']}`\n"
             f"- **Thermal SST Feed:** `{metrics.get('sst_data_source', 'n/a')}` "
             f"(Baseline `0.0σ`: `{metrics.get('sst_baseline_window', 'n/a')}` = `{metrics.get('baseline_median_sst', 0.0):.2f} °C`, `σ = {metrics.get('sigma_robust_sst', 0.0):.2f} °C`)\n"
@@ -1106,7 +1150,7 @@ def main() -> None:
             _build_intake_map(
                 lat=profile["coordinates"]["lat"],
                 lon=profile["coordinates"]["lon"],
-                buffer_deg=site_meta["buffer_deg"],
+                buffer_deg=active_site_meta["buffer_deg"],
                 site_name=profile["site_name"],
                 dark_mode=dark_mode,
             ),
@@ -1115,7 +1159,45 @@ def main() -> None:
 
     st.divider()
 
-    # --- 5 KPI Metric Cards (Raw Indices + Peak & Latest Robust Z-Scores) ---
+    # --- Epistemological KPI Strip: Window Site Potential vs. Recent Operational Status ---
+    total_passes = int(metrics["total_revisit_observations"])
+    high_cnt = int(metrics["high_risk_revisit_detections"])
+    mod_cnt = int(metrics["moderate_risk_revisit_detections"])
+    elevated_cnt = high_cnt + mod_cnt
+
+    df_sorted = df.sort_values("date").copy()
+    if "pass_risk" not in df_sorted.columns:
+        df_sorted["pass_risk"] = [
+            evaluate_pass_dual_gate(
+                ndci=float(r["ndci"]),
+                ndti=float(r["ndti"]),
+                ndci_zscore=float(r["ndci_zscore"]),
+                ndti_zscore=float(r["ndti_zscore"]),
+                sst_celsius=r.get("sst_celsius"),
+                sst_zscore=r.get("sst_zscore"),
+            )
+            for _, r in df_sorted.iterrows()
+        ]
+
+    # Peak event date across optical + thermal anomalies
+    z_cols_avail = [c for c in ("ndci_zscore", "ndti_zscore", "sst_zscore") if c in df_sorted.columns]
+    peak_row = df_sorted.loc[df_sorted[z_cols_avail].max(axis=1).idxmax()] if z_cols_avail else df_sorted.iloc[-1]
+    peak_date_str = pd.to_datetime(peak_row["date"]).strftime("%Y-%m-%d")
+
+    # Recent Operational Status: Last 30 days of window (or latest 3 passes)
+    end_dt_win = pd.to_datetime(df_sorted["date"].max())
+    recent_30d = df_sorted[df_sorted["date"] >= (end_dt_win - pd.Timedelta(days=30))]
+    recent_slice = recent_30d if len(recent_30d) >= 3 else df_sorted.tail(3)
+    recent_high = int((recent_slice["pass_risk"] == "HIGH").sum())
+    recent_mod = int((recent_slice["pass_risk"] == "MODERATE").sum())
+    recent_elev = recent_high + recent_mod
+    if recent_high >= 1:
+        recent_status_badge = "🔴 ACTIVE ANOMALY"
+    elif recent_mod >= 1:
+        recent_status_badge = "🟠 ACTIVE ANOMALY"
+    else:
+        recent_status_badge = "🟢 RETURNED TO BASELINE"
+
     kpi_1, kpi_2, kpi_3, kpi_4, kpi_5 = st.columns(5)
     overall_risk = metrics["overall_scram_clogging_risk"]
     risk_badge = (
@@ -1126,15 +1208,30 @@ def main() -> None:
 
     with kpi_1:
         st.metric(
-            label="Dual-Gate Clogging Risk",
+            label="Window Site Potential (IAEA SSR-1)",
             value=risk_badge,
-            delta=(
-                f"Latest: NDCI {metrics['latest_ndci']:+.3f} ({metrics['latest_ndci_zscore']:+.1f}σ) | "
-                f"NDTI {metrics['latest_ndti']:+.3f} ({metrics['latest_ndti_zscore']:+.1f}σ)"
-            ),
+            delta=f"{elevated_cnt} of {total_passes} passes elevated ({high_cnt}H/{mod_cnt}M) | Peak {peak_date_str}",
             delta_color="off",
+            help=(
+                "Historical siting susceptibility across the entire selected window (IAEA SSR-1). "
+                "A high peak earlier in the season does not necessarily mean an active emergency today."
+            ),
         )
     with kpi_2:
+        st.metric(
+            label="Recent Operational Status (30d / 3-Pass)",
+            value=recent_status_badge,
+            delta=(
+                f"{recent_elev}/{len(recent_slice)} recent passes elevated | "
+                f"Latest: NDCI {metrics['latest_ndci']:+.3f} ({metrics['latest_ndci_zscore']:+.1f}σ)"
+            ),
+            delta_color="inverse" if recent_elev >= 1 else "normal",
+            help=(
+                "Evaluates only the most recent 30 days (or latest 3 passes) of the selected window "
+                "to show whether the intake water mass is currently anomalous or returned to baseline."
+            ),
+        )
+    with kpi_3:
         st.metric(
             label="Peak NDCI (Trophic Precursor)",
             value=f"{metrics['max_ndci']:+.3f} ({metrics['max_ndci_zscore']:+.2f}σ)",
@@ -1146,7 +1243,7 @@ def main() -> None:
             )
             else "normal",
         )
-    with kpi_3:
+    with kpi_4:
         st.metric(
             label="Peak NDTI (Turbidity Precursor)",
             value=f"{metrics['max_ndti']:+.3f} ({metrics['max_ndti_zscore']:+.2f}σ)",
@@ -1158,7 +1255,7 @@ def main() -> None:
             )
             else "normal",
         )
-    with kpi_4:
+    with kpi_5:
         has_sst_kpi = pd.notna(metrics.get("max_sst"))
         st.metric(
             label="Peak SST (Thermal Trigger)",
@@ -1190,17 +1287,6 @@ def main() -> None:
                 f"{'DETECTED' if metrics.get('trophic_lag_jellyfish_precursor_detected') else 'not detected'}. "
                 f"Source: {metrics.get('sst_data_source', 'n/a')}."
             ),
-        )
-    with kpi_5:
-        st.metric(
-            label="Dual-Gate Hazard Detections",
-            value=f"{metrics['high_risk_revisit_detections']} HIGH passes",
-            delta=(
-                f"{metrics['moderate_risk_revisit_detections']} MODERATE passes | "
-                f"thermal: {metrics.get('thermal_high_pass_detections', 0)}H/"
-                f"{metrics.get('thermal_moderate_pass_detections', 0)}M"
-            ),
-            delta_color="off",
         )
 
     st.caption(
@@ -1266,7 +1352,7 @@ def main() -> None:
             max_sst=float(metrics.get("max_sst", 0.0) or 0.0),
             has_gemini_key=bool(active_gemini_key),
             _report_dict=report,
-            _site_meta=site_meta,
+            _site_meta=active_site_meta,
             _explicit_gemini_key=explicit_gemini_key,
         )
 
@@ -1329,7 +1415,7 @@ def main() -> None:
                 risk_level=risk_info["overall_scram_clogging_risk"],
                 has_gemini_key=bool(active_gemini_key),
                 _report_dict=report,
-                _site_meta=site_meta,
+                _site_meta=active_site_meta,
                 _explicit_gemini_key=explicit_gemini_key,
             )
             st.caption(
