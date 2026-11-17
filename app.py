@@ -635,7 +635,7 @@ def _build_dual_hazard_chart(
             "xanchor": "left",
             "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
         },
-        height=900,
+        height=930,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -644,11 +644,11 @@ def _build_dual_hazard_chart(
         legend={
             "orientation": "h",
             "yanchor": "top",
-            "y": -0.07,
+            "y": -0.10,
             "xanchor": "center",
             "x": 0.5,
         },
-        margin={"l": 60, "r": 30, "t": 75, "b": 85},
+        margin={"l": 60, "r": 30, "t": 75, "b": 115},
     )
     return fig
 
@@ -769,7 +769,7 @@ def _build_zscore_hazard_chart(
         yaxis_title="Robust Relative Anomaly (+σ above Site Median)",
         xaxis_title="Sentinel-2 L2A Revisit Date",
         yaxis={"range": [y_min_z, y_max_z]},
-        height=510,
+        height=535,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -778,11 +778,11 @@ def _build_zscore_hazard_chart(
         legend={
             "orientation": "h",
             "yanchor": "top",
-            "y": -0.15,
+            "y": -0.22,
             "xanchor": "center",
             "x": 0.5,
         },
-        margin={"l": 60, "r": 30, "t": 65, "b": 85},
+        margin={"l": 60, "r": 30, "t": 65, "b": 115},
     )
     return fig
 
