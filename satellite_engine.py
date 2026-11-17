@@ -10,7 +10,9 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import os
+import struct
 import warnings
+import zlib
 from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -1354,3 +1356,251 @@ def compute_site_regime_profile(
         "current_operational_risk": current_op_risk,
         "recent_tail_count": int(len(tail_risks)),
     }
+
+
+def _encode_rgb_png(rgb_uint8: np.ndarray) -> bytes:
+    """Encode an (H, W, 3) uint8 numpy array into a PNG bytes buffer using stdlib zlib/struct."""
+    h, w, _ = rgb_uint8.shape
+    raw_rows = b"".join(b"\x00" + rgb_uint8[y].tobytes() for y in range(h))
+
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack("!I", len(data))
+            + tag
+            + data
+            + struct.pack("!I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack("!IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", ihdr)
+        + _chunk(b"IDAT", zlib.compress(raw_rows, level=6))
+        + _chunk(b"IEND", b"")
+    )
+
+
+def _generate_synthetic_cutout_pair(
+    lat: float,
+    lon: float,
+    target_date_str: str,
+    ndci_val: float = 0.0,
+    ndti_val: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Generate deterministic 512x512 True Color RGB and Spatial NDCI Heatmap PNGs
+    calibrated to the pass's `ndci_val` and `ndti_val`, showing the coastal intake
+    shoreline (bottom edge) and offshore ±0.015° ROI bounding box.
+    """
+    h, w = 512, 512
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    xn = xx / w
+    yn = yy / h
+
+    # Deterministic plume & coastal shoreline mask (land at bottom-right/bottom)
+    seed_val = int(abs(round(lat * 1000) * 17 + round(lon * 1000) * 31)) % (2**31 - 1)
+    rng = np.random.default_rng(seed_val)
+    shore_y = 0.80 + 0.06 * np.sin(xn * 5.0 + 0.4) + 0.03 * np.cos(xn * 11.0)
+    is_land = yn >= shore_y
+
+    # Plume intensity driven by ndci_val (-0.15..+0.25) and ndti_val (-0.40..0.0)
+    bloom_strength = float(np.clip((ndci_val + 0.10) / 0.20, 0.05, 1.35))
+    turb_strength = float(np.clip((ndti_val + 0.35) / 0.25, 0.05, 1.25))
+    plume = np.exp(-(((xn - 0.48) ** 2) / 0.14 + ((yn - 0.56) ** 2) / 0.09))
+    filament = 0.5 + 0.5 * np.sin(xn * 9.0 + yn * 6.0 + rng.uniform(0, 3.14))
+    spatial_ndci = (
+        ndci_val
+        - 0.04
+        + 0.11 * bloom_strength * plume * (0.65 + 0.35 * filament)
+        + 0.03 * np.exp(-((yn - 0.72) ** 2) / 0.015)
+    )
+
+    # --- 1) True Color RGB ---
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+    rgb[..., 0] = 18.0 + 38.0 * turb_strength * plume + 28.0 * bloom_strength * plume * 0.4
+    rgb[..., 1] = 52.0 + 68.0 * bloom_strength * plume + 32.0 * turb_strength * plume
+    rgb[..., 2] = 92.0 + 35.0 * (1.0 - plume) + 20.0 * turb_strength * plume
+    # Coastal land / breakwaters
+    rgb[is_land, 0] = 68.0
+    rgb[is_land, 1] = 74.0
+    rgb[is_land, 2] = 62.0
+
+    # --- 2) Spatial NDCI Heatmap (-0.15..+0.25 -> Dark Blue -> Cyan -> Yellow -> Red) ---
+    t = np.clip((spatial_ndci + 0.15) / 0.40, 0.0, 1.0)
+    ndci_rgb = np.zeros((h, w, 3), dtype=np.float32)
+    # Piecewise 4-stop gradient: (0.0: 10,25,90), (0.33: 0,210,235), (0.67: 250,230,45), (1.0: 225,35,45)
+    m1 = t < 0.333
+    m2 = (t >= 0.333) & (t < 0.667)
+    m3 = t >= 0.667
+    s1 = t[m1] / 0.333
+    ndci_rgb[m1, 0] = 10.0 * (1.0 - s1)
+    ndci_rgb[m1, 1] = 25.0 + 185.0 * s1
+    ndci_rgb[m1, 2] = 90.0 + 145.0 * s1
+    s2 = (t[m2] - 0.333) / 0.334
+    ndci_rgb[m2, 0] = 250.0 * s2
+    ndci_rgb[m2, 1] = 210.0 + 20.0 * s2
+    ndci_rgb[m2, 2] = 235.0 - 190.0 * s2
+    s3 = (t[m3] - 0.667) / 0.333
+    ndci_rgb[m3, 0] = 250.0 - 25.0 * s3
+    ndci_rgb[m3, 1] = 230.0 - 195.0 * s3
+    ndci_rgb[m3, 2] = 45.0
+    ndci_rgb[is_land] = [30.0, 41.0, 59.0]  # Muted dark slate for land
+
+    # Draw offshore ±0.015° ROI box inside [lon±0.035, lat±0.028]
+    x0, x1 = int(w * (0.035 - 0.015) / 0.070), int(w * (0.035 + 0.015) / 0.070)
+    y0, y1 = int(h * (0.028 - 0.015) / 0.056), int(h * (0.028 + 0.015) / 0.056)
+    for img in (rgb, ndci_rgb):
+        img[y0 : y0 + 3, x0:x1] = [0.0, 240.0, 255.0]
+        img[y1 - 3 : y1, x0:x1] = [0.0, 240.0, 255.0]
+        img[y0:y1, x0 : x0 + 3] = [0.0, 240.0, 255.0]
+        img[y0:y1, x1 - 3 : x1] = [0.0, 240.0, 255.0]
+
+    return {
+        "rgb_png": _encode_rgb_png(np.clip(rgb, 0, 255).astype(np.uint8)),
+        "ndci_png": _encode_rgb_png(np.clip(ndci_rgb, 0, 255).astype(np.uint8)),
+        "source_label": "Simulated Spectral Raster (Demo/Offline Mode)",
+        "is_live": False,
+        "bbox": [round(lon - 0.035, 6), round(lat - 0.028, 6), round(lon + 0.035, 6), round(lat + 0.028, 6)],
+        "date": target_date_str,
+    }
+
+
+def _optional_st_cache_data(func):
+    try:
+        import streamlit as st
+
+        return st.cache_data(ttl=86400, show_spinner=False)(func)
+    except Exception:  # noqa: BLE001
+        return func
+
+
+@_optional_st_cache_data
+def fetch_sentinel2_pass_imagery(
+    lat: float,
+    lon: float,
+    target_date_str: str,
+    client_id: str = "",
+    client_secret: str = "",
+    ndci_val: float = 0.0,
+    ndti_val: float = 0.0,
+    allow_cloud_secrets: bool = True,
+) -> Dict[str, Any]:
+    """
+    Fetch 10m-native Sentinel-2 L2A 512x512 PNG cutouts (True Color RGB + Spatial NDCI Heatmap)
+    from the Copernicus CDSE Sentinel Hub Process API within ±2 days of `target_date_str`.
+    Falls back cleanly to a calibrated synthetic 512x512 raster if credentials are absent or HTTP fails.
+    """
+    if allow_cloud_secrets:
+        resolved_id, resolved_secret, _ = resolve_cdse_credentials(client_id, client_secret)
+    else:
+        resolved_id = (client_id or "").strip() or None
+        resolved_secret = (client_secret or "").strip() or None
+    if not resolved_id or not resolved_secret:
+        return _generate_synthetic_cutout_pair(lat, lon, target_date_str, ndci_val, ndti_val)
+
+    bbox = [round(lon - 0.035, 6), round(lat - 0.028, 6), round(lon + 0.035, 6), round(lat + 0.028, 6)]
+    dt = pd.to_datetime(target_date_str)
+    from_iso = (dt - pd.Timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+    to_iso = (dt + pd.Timedelta(days=2)).strftime("%Y-%m-%dT23:59:59Z")
+
+    evalscript_rgb = """//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B04", "B03", "B02", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  if (s.dataMask === 0) return [15, 23, 42, 255];
+  let r = Math.round(Math.pow(Math.min(1.0, Math.max(0.0, s.B04 * 2.5)), 0.45) * 255);
+  let g = Math.round(Math.pow(Math.min(1.0, Math.max(0.0, s.B03 * 2.5)), 0.45) * 255);
+  let b = Math.round(Math.pow(Math.min(1.0, Math.max(0.0, s.B02 * 2.5)), 0.45) * 255);
+  return [r, g, b, 255];
+}
+"""
+
+    evalscript_ndci = """//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B03", "B04", "B05", "B08", "SCL", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  if (s.dataMask === 0) return [30, 41, 59, 255];
+  let ndwi = (s.B03 + s.B08) > 0 ? (s.B03 - s.B08) / (s.B03 + s.B08) : -1.0;
+  let isWater = (s.SCL === 6 || ndwi > -0.05);
+  if (!isWater) return [30, 41, 59, 255];
+  let denom = s.B05 + s.B04;
+  if (denom <= 0.001) return [10, 25, 90, 255];
+  let ndci = (s.B05 - s.B04) / denom;
+  let t = Math.min(1.0, Math.max(0.0, (ndci + 0.15) / 0.40));
+  let r, g, b;
+  if (t < 0.333) {
+    let u = t / 0.333;
+    r = Math.round(10 * (1 - u));
+    g = Math.round(25 + 185 * u);
+    b = Math.round(90 + 145 * u);
+  } else if (t < 0.667) {
+    let u = (t - 0.333) / 0.334;
+    r = Math.round(250 * u);
+    g = Math.round(210 + 20 * u);
+    b = Math.round(235 - 190 * u);
+  } else {
+    let u = (t - 0.667) / 0.333;
+    r = Math.round(250 - 25 * u);
+    g = Math.round(230 - 195 * u);
+    b = 45;
+  }
+  return [r, g, b, 255];
+}
+"""
+
+    try:
+        import requests
+
+        token = _get_cdse_access_token(resolved_id, resolved_secret, timeout=15)
+        process_url = "https://sh.dataspace.copernicus.eu/api/v1/process"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "image/png",
+        }
+
+        def _req(evalscript: str) -> bytes:
+            payload = {
+                "input": {
+                    "bounds": {"bbox": bbox},
+                    "data": [
+                        {
+                            "type": "sentinel-2-l2a",
+                            "dataFilter": {
+                                "timeRange": {"from": from_iso, "to": to_iso},
+                                "mosaickingOrder": "leastCC",
+                            },
+                        }
+                    ],
+                },
+                "output": {
+                    "width": 512,
+                    "height": 512,
+                    "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
+                },
+                "evalscript": evalscript,
+            }
+            r = requests.post(process_url, headers=headers, json=payload, timeout=25)
+            r.raise_for_status()
+            return r.content
+
+        rgb_png = _req(evalscript_rgb)
+        ndci_png = _req(evalscript_ndci)
+        return {
+            "rgb_png": rgb_png,
+            "ndci_png": ndci_png,
+            "source_label": "Live Copernicus Sentinel-2 L2A (10m Cutout)",
+            "is_live": True,
+            "bbox": bbox,
+            "date": target_date_str,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Process API cutout fallback for %s (%s)", target_date_str, exc)
+        return _generate_synthetic_cutout_pair(lat, lon, target_date_str, ndci_val, ndti_val)

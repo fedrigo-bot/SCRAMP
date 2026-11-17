@@ -44,7 +44,11 @@ from config import (
     ZSCORE_THRESHOLDS,
     compute_bounding_box,
 )
-from satellite_engine import CopernicusWaterMonitor, resolve_cdse_credentials
+from satellite_engine import (
+    CopernicusWaterMonitor,
+    fetch_sentinel2_pass_imagery,
+    resolve_cdse_credentials,
+)
 
 
 st.set_page_config(
@@ -1360,25 +1364,212 @@ def main() -> None:
         horizontal=True,
     )
 
+    chart_event = None
     if "Spectral" in chart_view or "Both" in chart_view:
-        st.plotly_chart(
+        chart_event = st.plotly_chart(
             _build_dual_hazard_chart(
                 df=df,
                 site_name=profile["site_name"],
                 dark_mode=dark_mode,
             ),
             use_container_width=True,
+            on_select="rerun",
+            selection_mode="points",
+            key="hazard_timeseries_chart",
         )
 
     if "Robust Z-Score" in chart_view or "Both" in chart_view:
-        st.plotly_chart(
+        z_event = st.plotly_chart(
             _build_zscore_hazard_chart(
                 df=df,
                 site_name=profile["site_name"],
                 dark_mode=dark_mode,
             ),
             use_container_width=True,
+            on_select="rerun",
+            selection_mode="points",
+            key="zscore_timeseries_chart",
         )
+        if chart_event is None:
+            chart_event = z_event
+
+    # --- Sentinel-2 Orbital Pass Visual Verification (10m Native Resolution) ---
+    valid_mask = pd.Series(True, index=df.index)
+    if "valid_water_coverage_pct" in df.columns:
+        valid_mask &= pd.to_numeric(df["valid_water_coverage_pct"], errors="coerce") >= MIN_VALID_WATER_PCT
+    if "ndci" in df.columns:
+        valid_mask &= pd.to_numeric(df["ndci"], errors="coerce").notna()
+    valid_df = df.loc[valid_mask].sort_values("date").copy()
+    valid_pass_dates = pd.to_datetime(valid_df["date"]).dt.strftime("%Y-%m-%d").tolist()
+
+    if valid_pass_dates:
+        default_inspected = (
+            peak_date_str if peak_date_str in valid_pass_dates else valid_pass_dates[-1]
+        )
+        if st.session_state.get("inspected_sig") != active_res["signature"]:
+            st.session_state["inspected_pass_date"] = default_inspected
+            st.session_state["pass_selector_dropdown"] = default_inspected
+            st.session_state["inspected_sig"] = active_res["signature"]
+
+        # Snap clicked Plotly point to nearest valid Sentinel-2 pass date
+        try:
+            pts = (
+                chart_event.selection.points
+                if chart_event and getattr(chart_event, "selection", None)
+                else []
+            )
+            if pts:
+                clicked_x = pd.to_datetime(pts[0].get("x")).tz_localize(None)
+                valid_ts = pd.to_datetime(valid_pass_dates)
+                nearest_idx = int((valid_ts - clicked_x).abs().argmin())
+                snapped = valid_pass_dates[nearest_idx]
+                if st.session_state.get("inspected_pass_date") != snapped:
+                    st.session_state["inspected_pass_date"] = snapped
+                    st.session_state["pass_selector_dropdown"] = snapped
+        except Exception:  # noqa: BLE001
+            pass
+
+        def _sync_pass_from_dropdown() -> None:
+            st.session_state["inspected_pass_date"] = st.session_state["pass_selector_dropdown"]
+
+        st.divider()
+        with st.container(border=True):
+            st.subheader("🛰️ Sentinel-2 Orbital Pass Visual Verification (10m Native Resolution)")
+            st.caption(
+                "Click any point on the time-series chart above or choose an orbital pass below "
+                "to inspect the 10 m True Color RGB and Spatial Chlorophyll-a (NDCI) plume cutout."
+            )
+
+            pass_lookup = valid_df.assign(
+                _dstr=pd.to_datetime(valid_df["date"]).dt.strftime("%Y-%m-%d")
+            ).set_index("_dstr")
+
+            def _fmt_pass(dstr: str) -> str:
+                star = "⭐ Peak Anomaly — " if dstr == default_inspected else ""
+                row = pass_lookup.loc[dstr]
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[0]
+                return (
+                    f"{star}{dstr} | NDCI {float(row['ndci']):+.3f} ({float(row['ndci_zscore']):+.2f}σ) | "
+                    f"Water {float(row['valid_water_coverage_pct']):.0f}%"
+                )
+
+            cur_pass = st.session_state.get("inspected_pass_date", default_inspected)
+            if cur_pass not in valid_pass_dates:
+                cur_pass = default_inspected
+            st.session_state["pass_selector_dropdown"] = cur_pass
+
+            sel_col, btn_col = st.columns([2.2, 1.0])
+            with sel_col:
+                selected_pass = st.selectbox(
+                    "Select or Click a Sentinel-2 Orbital Pass to Inspect Imagery:",
+                    options=valid_pass_dates,
+                    format_func=_fmt_pass,
+                    key="pass_selector_dropdown",
+                    on_change=_sync_pass_from_dropdown,
+                )
+            pass_row = pass_lookup.loc[selected_pass]
+            if isinstance(pass_row, pd.DataFrame):
+                pass_row = pass_row.iloc[0]
+
+            st.session_state.setdefault("live_cutout_keys", set())
+            cutout_sig = (
+                round(float(profile["coordinates"]["lat"]), 4),
+                round(float(profile["coordinates"]["lon"]), 4),
+                selected_pass,
+            )
+            is_live_mode = "Live Copernicus" in report["report_metadata"]["data_source_mode"]
+            already_loaded = cutout_sig in st.session_state["live_cutout_keys"]
+
+            with btn_col:
+                st.write("")
+                st.write("")
+                load_live_cutout = st.button(
+                    "🛰️ Load Live 10m Satellite Cutout for Selected Date",
+                    disabled=not is_live_mode,
+                    use_container_width=True,
+                    help=(
+                        "Fetches 512x512 10m RGB & NDCI PNG cutouts from Copernicus Process API (cached 24h)."
+                        if is_live_mode
+                        else "Switch to Live Copernicus CDSE API mode to fetch live 10m cutouts."
+                    ),
+                )
+
+            # Pass metric strip
+            pm1, pm2, pm3, pm4, pm5 = st.columns(5)
+            pm1.metric("Pass Date", selected_pass)
+            pm2.metric(
+                "NDCI (Pass)",
+                f"{float(pass_row['ndci']):+.3f}",
+                f"{float(pass_row['ndci_zscore']):+.2f}σ",
+                delta_color="off",
+            )
+            pm3.metric(
+                "NDTI (Pass)",
+                f"{float(pass_row['ndti']):+.3f}",
+                f"{float(pass_row['ndti_zscore']):+.2f}σ",
+                delta_color="off",
+            )
+            sst_p = pass_row.get("sst_celsius")
+            pm4.metric(
+                "SST (°C)",
+                f"{float(sst_p):.1f} °C" if pd.notna(sst_p) else "n/a",
+                f"{float(pass_row.get('sst_zscore', 0.0)):+.2f}σ" if pd.notna(sst_p) else None,
+                delta_color="off",
+            )
+            pm5.metric(
+                "Valid Water Coverage",
+                f"{float(pass_row['valid_water_coverage_pct']):.1f}%",
+            )
+
+            use_live_creds = False
+            if is_live_mode and (load_live_cutout or already_loaded):
+                if already_loaded:
+                    use_live_creds = True
+                elif st.session_state["live_api_calls"] < 15:
+                    use_live_creds = True
+                    st.session_state["live_api_calls"] += 1
+                    st.session_state["live_cutout_keys"].add(cutout_sig)
+                else:
+                    st.info(
+                        "Session live API limit (15/15) reached; displaying simulated spectral raster.",
+                        icon="ℹ️",
+                    )
+
+            imagery = fetch_sentinel2_pass_imagery(
+                lat=float(profile["coordinates"]["lat"]),
+                lon=float(profile["coordinates"]["lon"]),
+                target_date_str=selected_pass,
+                client_id=client_id if use_live_creds else "",
+                client_secret=client_secret if use_live_creds else "",
+                ndci_val=float(pass_row["ndci"]),
+                ndti_val=float(pass_row["ndti"]),
+                allow_cloud_secrets=use_live_creds,
+            )
+
+            st.caption(f"**Imagery Source:** `{imagery['source_label']}` | **Cutout BBox:** `{imagery['bbox']}`")
+            img_col1, img_col2 = st.columns(2)
+            with img_col1:
+                st.markdown("**Sentinel-2 L2A True Color (RGB — Bands B04/B03/B02)**")
+                st.image(imagery["rgb_png"], use_container_width=True)
+                st.caption(
+                    f"Offshore ±{active_site_meta['buffer_deg']}° ROI centered at "
+                    f"({profile['coordinates']['lat']:.4f}° N, {profile['coordinates']['lon']:.4f}° E) "
+                    "relative to the coastal intake channel and breakwaters."
+                )
+            with img_col2:
+                st.markdown("**Spatial Chlorophyll-a Index (NDCI — Bands B05/B04)**")
+                st.image(imagery["ndci_png"], use_container_width=True)
+                st.markdown(
+                    """
+                    <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:4px;">
+                      <span><b>-0.15</b> Low</span>
+                      <div style="flex:1;height:10px;border-radius:4px;background:linear-gradient(90deg,#0a195a 0%,#00d2eb 33%,#fae62d 67%,#e1232d 100%);"></div>
+                      <span><b>+0.25</b> High Bloom Density</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     st.divider()
 
