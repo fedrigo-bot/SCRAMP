@@ -1159,78 +1159,109 @@ def main() -> None:
 
     st.divider()
 
-    # --- Epistemological KPI Strip: Window Site Potential vs. Recent Operational Status ---
-    total_passes = int(metrics["total_revisit_observations"])
-    high_cnt = int(metrics["high_risk_revisit_detections"])
-    mod_cnt = int(metrics["moderate_risk_revisit_detections"])
-    elevated_cnt = high_cnt + mod_cnt
+    # --- Conditional Characterization Banner & Epistemological KPI Strip ---
+    is_present = bool(metrics.get("is_present_day_window", False))
+    regime_profile = str(metrics.get("window_regime_profile", "SEASONAL / MULTI-PHASE REGIME"))
+    n_anom = int(metrics.get("anomalous_passes_count", 0))
+    n_tot = int(metrics.get("total_valid_passes", metrics["total_revisit_observations"]))
+    exc_pct = float(metrics.get("exceedance_pct", 0.0))
+    max_streak = int(metrics.get("max_consecutive_streak", 0))
+    peak_date_str = str(metrics.get("peak_event_date", "n/a"))
+    days_since_last = int(metrics.get("days_since_last_pass", 0))
+    latest_pass_date = str(metrics.get("latest_valid_pass_date", "n/a"))
+    cur_op_risk = str(metrics.get("current_operational_risk", "LOW"))
 
-    df_sorted = df.sort_values("date").copy()
-    if "pass_risk" not in df_sorted.columns:
-        df_sorted["pass_risk"] = [
-            evaluate_pass_dual_gate(
-                ndci=float(r["ndci"]),
-                ndti=float(r["ndti"]),
-                ndci_zscore=float(r["ndci_zscore"]),
-                ndti_zscore=float(r["ndti_zscore"]),
-                sst_celsius=r.get("sst_celsius"),
-                sst_zscore=r.get("sst_zscore"),
-            )
-            for _, r in df_sorted.iterrows()
-        ]
-
-    # Peak event date across optical + thermal anomalies
-    z_cols_avail = [c for c in ("ndci_zscore", "ndti_zscore", "sst_zscore") if c in df_sorted.columns]
-    peak_row = df_sorted.loc[df_sorted[z_cols_avail].max(axis=1).idxmax()] if z_cols_avail else df_sorted.iloc[-1]
-    peak_date_str = pd.to_datetime(peak_row["date"]).strftime("%Y-%m-%d")
-
-    # Recent Operational Status: Last 30 days of window (or latest 3 passes)
-    end_dt_win = pd.to_datetime(df_sorted["date"].max())
-    recent_30d = df_sorted[df_sorted["date"] >= (end_dt_win - pd.Timedelta(days=30))]
-    recent_slice = recent_30d if len(recent_30d) >= 3 else df_sorted.tail(3)
-    recent_high = int((recent_slice["pass_risk"] == "HIGH").sum())
-    recent_mod = int((recent_slice["pass_risk"] == "MODERATE").sum())
-    recent_elev = recent_high + recent_mod
-    if recent_high >= 1:
-        recent_status_badge = "🔴 ACTIVE"
-        recent_delta_label = f"ACTIVE ANOMALY ({recent_elev}/{len(recent_slice)} recent)"
-    elif recent_mod >= 1:
-        recent_status_badge = "🟠 ACTIVE"
-        recent_delta_label = f"ACTIVE ANOMALY ({recent_elev}/{len(recent_slice)} recent)"
-    else:
-        recent_status_badge = "🟢 BASELINE"
-        recent_delta_label = f"Returned to baseline (0/{len(recent_slice)} recent)"
-
-    kpi_1, kpi_2, kpi_3, kpi_4, kpi_5 = st.columns(5)
-    overall_risk = metrics["overall_scram_clogging_risk"]
-    risk_badge = (
-        "🔴 HIGH"
-        if overall_risk == "HIGH"
-        else ("🟠 MODERATE" if overall_risk == "MODERATE" else "🟢 LOW")
+    short_regime = (
+        "Stable"
+        if "STABLE" in regime_profile
+        else (
+            "Episodic"
+            if "EPISODIC" in regime_profile
+            else ("Chronic" if "CHRONIC" in regime_profile else "Seasonal")
+        )
     )
 
-    with kpi_1:
-        st.metric(
-            label="Window Site Potential (IAEA SSR-1)",
-            value=risk_badge,
-            delta=f"{elevated_cnt}/{total_passes} elevated | Peak {peak_date_str}",
-            delta_color="off",
-            help=(
-                "Historical siting susceptibility across the entire selected window (IAEA SSR-1). "
-                "A high peak earlier in the season does not necessarily mean an active emergency today."
-            ),
+    if is_present:
+        if days_since_last > 18 or cur_op_risk == "CLOUD_OBSCURED":
+            op_banner_text = "⚪ RECENT OPTICAL DATA OBSCURED BY CLOUDS (Thermal Watch Only)"
+            op_kpi_value = "⚪ OBSCURED"
+            st.warning(
+                f"**CURRENT OPERATIONAL RISK:** {op_banner_text}  \n"
+                f"Latest clear Sentinel-2 pass: **{days_since_last} days ago** (`{latest_pass_date}`) | "
+                f"Window Regime: **{short_regime}** (`{regime_profile}`)",
+                icon="☁️",
+            )
+        elif cur_op_risk == "HIGH":
+            op_kpi_value = "🔴 HIGH"
+            st.error(
+                f"**CURRENT OPERATIONAL RISK (21-Day Tail): 🔴 HIGH**  \n"
+                f"Latest clear Sentinel-2 pass: **{days_since_last} days ago** (`{latest_pass_date}`) | "
+                f"Window Regime: **{short_regime}** (`{n_anom}/{n_tot}` passes, `{exc_pct:.1f}%`)",
+                icon="🚨",
+            )
+        elif cur_op_risk == "MODERATE":
+            op_kpi_value = "🟡 MODERATE"
+            st.warning(
+                f"**CURRENT OPERATIONAL RISK (21-Day Tail): 🟡 MODERATE**  \n"
+                f"Latest clear Sentinel-2 pass: **{days_since_last} days ago** (`{latest_pass_date}`) | "
+                f"Window Regime: **{short_regime}** (`{n_anom}/{n_tot}` passes, `{exc_pct:.1f}%`)",
+                icon="⚠️",
+            )
+        else:
+            op_kpi_value = "🟢 LOW"
+            st.success(
+                f"**CURRENT OPERATIONAL RISK (21-Day Tail): 🟢 LOW**  \n"
+                f"Latest clear Sentinel-2 pass: **{days_since_last} days ago** (`{latest_pass_date}`) | "
+                f"Window Regime: **{short_regime}** (`{n_anom}/{n_tot}` passes, `{exc_pct:.1f}%`)",
+                icon="✅",
+            )
+    else:
+        st.info(
+            f"📊 **HISTORICAL SITE CHARACTERIZATION (IAEA SSR-1): `{regime_profile}`**  \n"
+            f"Anomalous Passes: **{n_anom} of {n_tot} clear passes ({exc_pct:.1f}%)** | "
+            f"Max Persistence: **{max_streak} consecutive passes** | "
+            f"Peak Anomaly Date: **`{peak_date_str}`**",
         )
-    with kpi_2:
-        st.metric(
-            label="Recent Operational Status (30d / 3-Pass)",
-            value=recent_status_badge,
-            delta=recent_delta_label,
-            delta_color="inverse" if recent_elev >= 1 else "normal",
-            help=(
-                "Evaluates only the most recent 30 days (or latest 3 passes) of the selected window "
-                "to show whether the intake water mass is currently anomalous or returned to baseline."
-            ),
-        )
+
+    kpi_1, kpi_2, kpi_3, kpi_4, kpi_5 = st.columns(5)
+
+    if is_present:
+        with kpi_1:
+            st.metric(
+                label="Current Operational Risk",
+                value=op_kpi_value,
+                delta=f"Latest pass: {days_since_last}d ago ({latest_pass_date})",
+                delta_color="inverse" if cur_op_risk in ("HIGH", "MODERATE") else "off",
+                help=(
+                    "Evaluated strictly from the Recent Operational Tail (last 21 days). "
+                    "Displays Cloud Obscured if >18 days without a clear Sentinel-2 pass."
+                ),
+            )
+        with kpi_2:
+            st.metric(
+                label="Window Regime (Lookback)",
+                value=short_regime,
+                delta=f"{n_anom}/{n_tot} ({exc_pct:.0f}%) | Streak {max_streak}",
+                delta_color="off",
+                help=f"Full-window regime: {regime_profile}. Peak event on {peak_date_str}.",
+            )
+    else:
+        with kpi_1:
+            st.metric(
+                label="Site Regime Profile (SSR-1)",
+                value=short_regime,
+                delta=f"Peak date: {peak_date_str}",
+                delta_color="off",
+                help=f"Historical ecological temperament: {regime_profile}.",
+            )
+        with kpi_2:
+            st.metric(
+                label="Exceedance Frequency",
+                value=f"{n_anom}/{n_tot} passes",
+                delta=f"{exc_pct:.1f}% | Max streak {max_streak}",
+                delta_color="off",
+                help="Share of cloud-free passes in this historical window exceeding Dual-Gate thresholds.",
+            )
     with kpi_3:
         st.metric(
             label="Peak NDCI (Trophic Precursor)",

@@ -12,7 +12,7 @@ import logging
 import os
 import warnings
 from datetime import date, datetime
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -1263,3 +1263,94 @@ function evaluatePixel(samples) {
             )
 
         return self._finalize_dataframe(df)
+
+
+def compute_site_regime_profile(
+    df: pd.DataFrame,
+    end_date: Union[str, date, datetime],
+    trophic_lag_detected: bool = False,
+) -> Dict[str, Any]:
+    """
+    Separate **Historical Regime Characterization** from **Present-Day Operational Surveillance**:
+      - `is_present_day_window`: True if `(date.today() - end_date).days <= 2`
+      - `window_regime_profile`:
+          * STABLE BASELINE REGIME        (N_exceed == 0)
+          * EPISODIC / IMPULSE REGIME     (1 <= N_exceed <= 2 and max_streak == 1 and exceedance_pct < 18%)
+          * SEASONAL / MULTI-PHASE REGIME (18% <= exceedance_pct <= 35%, or max_streak == 2, or coupled trophic-lag)
+          * CHRONIC / SUSTAINED STRESS REGIME (exceedance_pct > 35% or max_streak >= 3)
+      - `current_operational_risk`: evaluated strictly on the Recent Operational Tail
+        (last 21 days up to `end_date`, or latest 2 passes if within 21 days), guarded by
+        `days_since_last_pass > 18` -> `CLOUD_OBSCURED`.
+    """
+    work = df.sort_values("date").reset_index(drop=True)
+    dates = pd.to_datetime(work["date"]).dt.tz_localize(None)
+    end_dt = pd.to_datetime(end_date).tz_localize(None).normalize()
+    is_present = (date.today() - end_dt.date()).days <= 2
+
+    risks = work["pass_risk"].astype(str).tolist() if "pass_risk" in work.columns else ["LOW"] * len(work)
+    n_total = len(work)
+    is_exceed = [r in ("MODERATE", "HIGH") for r in risks]
+    n_exceed = sum(is_exceed)
+    exceedance_pct = round((n_exceed / max(1, n_total)) * 100.0, 1)
+
+    max_streak = 0
+    cur_streak = 0
+    for flag in is_exceed:
+        if flag:
+            cur_streak += 1
+            if cur_streak > max_streak:
+                max_streak = cur_streak
+        else:
+            cur_streak = 0
+
+    z_cols = [c for c in ("ndci_zscore", "ndti_zscore", "sst_zscore") if c in work.columns]
+    if z_cols:
+        peak_idx = work[z_cols].max(axis=1).idxmax()
+        peak_event_date = pd.to_datetime(work.loc[peak_idx, "date"]).strftime("%Y-%m-%d")
+    else:
+        peak_event_date = dates.iloc[-1].strftime("%Y-%m-%d")
+
+    if n_exceed == 0:
+        regime = "STABLE BASELINE REGIME"
+    elif exceedance_pct > 35.0 or max_streak >= 3:
+        regime = "CHRONIC / SUSTAINED STRESS REGIME"
+    elif 1 <= n_exceed <= 2 and max_streak == 1 and exceedance_pct < 18.0 and not trophic_lag_detected:
+        regime = "EPISODIC / IMPULSE REGIME"
+    else:
+        regime = "SEASONAL / MULTI-PHASE REGIME"
+
+    latest_pass_dt = dates.iloc[-1].normalize()
+    days_since_last = max(0, int((end_dt - latest_pass_dt).days))
+    latest_valid_pass_date = latest_pass_dt.strftime("%Y-%m-%d")
+
+    # Recent Operational Tail: only passes within the last 21 days up to end_date
+    tail_cutoff = end_dt - pd.Timedelta(days=21)
+    tail_mask = dates >= tail_cutoff
+    tail_df = work.loc[tail_mask]
+    if len(tail_df) > 2 and (end_dt - dates.loc[tail_df.index[-2]]).days <= 21:
+        # keep all passes within the 21-day tail
+        pass
+    tail_risks = tail_df["pass_risk"].astype(str).tolist() if ("pass_risk" in tail_df.columns and not tail_df.empty) else []
+
+    if days_since_last > 18 or not tail_risks:
+        current_op_risk = "CLOUD_OBSCURED"
+    elif "HIGH" in tail_risks:
+        current_op_risk = "HIGH"
+    elif "MODERATE" in tail_risks:
+        current_op_risk = "MODERATE"
+    else:
+        current_op_risk = "LOW"
+
+    return {
+        "is_present_day_window": bool(is_present),
+        "window_regime_profile": regime,
+        "anomalous_passes_count": int(n_exceed),
+        "total_valid_passes": int(n_total),
+        "exceedance_pct": exceedance_pct,
+        "max_consecutive_streak": int(max_streak),
+        "peak_event_date": peak_event_date,
+        "days_since_last_pass": days_since_last,
+        "latest_valid_pass_date": latest_valid_pass_date,
+        "current_operational_risk": current_op_risk,
+        "recent_tail_count": int(len(tail_risks)),
+    }

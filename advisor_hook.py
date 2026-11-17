@@ -43,6 +43,7 @@ from config import (
 from satellite_engine import (
     compute_historical_window_sst_baseline,
     compute_robust_zscore_series,
+    compute_site_regime_profile,
 )
 
 TROPHIC_THERMAL_DRIVER = (
@@ -697,6 +698,17 @@ def _build_irrs_checklist(
         if trophic_lag
         else ""
     )
+    is_present = bool(hazard_metrics.get("is_present_day_window", False))
+    regime_profile = str(hazard_metrics.get("window_regime_profile", "SEASONAL / MULTI-PHASE REGIME"))
+    n_anom = int(hazard_metrics.get("anomalous_passes_count", 0))
+    n_tot = int(hazard_metrics.get("total_valid_passes", hazard_metrics.get("total_revisit_observations", 0)))
+    exc_pct = float(hazard_metrics.get("exceedance_pct", 0.0))
+    days_stale = int(hazard_metrics.get("days_since_last_pass", 0))
+    mode_framing = (
+        f"Present-Day Operational Surveillance (latest pass {days_stale}d ago; 21-day tail={hazard_metrics.get('current_operational_risk', risk_level)}; regime={regime_profile})"
+        if is_present
+        else f"Site Design & IRRS Historical Experience Review ({regime_profile}: {n_anom}/{n_tot} passes, {exc_pct:.1f}%)"
+    )
 
     checklist: List[Dict[str, str]] = [
         {
@@ -757,15 +769,16 @@ def _build_irrs_checklist(
             "status": card4_status,
             "cited_paragraphs": "IAEA NHSI SMR Sec. 3.2 & 4.1; SSR-1 Req. 19, 20, 25; SSG-18 Sec. 5",
             "finding": (
-                f"Deterministic Dual-Gate Verdict: {risk_level} across {hazard_metrics['total_revisit_observations']} "
-                f"passes ({hazard_metrics['high_risk_revisit_detections']} HIGH, "
-                f"{hazard_metrics['moderate_risk_revisit_detections']} MODERATE). "
+                f"[{mode_framing}] "
+                f"Window Regime: {regime_profile} ({n_anom} of {n_tot} passes, {exc_pct:.1f}%, "
+                f"max streak {hazard_metrics.get('max_consecutive_streak', 0)}). "
                 f"Cross-channel envelope: NDCI {max_ndci:+.3f} ({max_ndci_z:+.2f}σ), "
                 f"NDTI {max_ndti:+.3f} ({max_ndti_z:+.2f}σ), SST {sst_txt}."
             ),
             "irrs_reviewer_prompt": (
                 f"Verify under NHSI SMR Guidelines Sec. 3.2 & 4.1 that {site_meta.get('type', 'this facility')} "
-                f"demonstrates passive/active decay-heat removal margin and export this JSON/CSV baseline for IRRS review."
+                f"{'maintains active operational readiness for the current 21-day tail' if is_present else 'incorporates this historical regime profile into site design basis and IRRS operating experience'} "
+                f"and export this JSON/CSV baseline."
             ),
         },
     ]
@@ -859,8 +872,24 @@ def synthesize_hybrid_rag_cards(
             "coupled screen-fouling and jellyfish ingress margins is advised.]"
         )
 
+    is_present = bool(metrics.get("is_present_day_window", False))
+    regime_profile = str(metrics.get("window_regime_profile", "SEASONAL / MULTI-PHASE REGIME"))
+    n_anom = int(metrics.get("anomalous_passes_count", 0))
+    n_tot = int(metrics.get("total_valid_passes", metrics.get("total_revisit_observations", 0)))
+    days_stale = int(metrics.get("days_since_last_pass", 0))
+    cur_op = str(metrics.get("current_operational_risk", risk_level))
+    eval_context = (
+        f"PRESENT-DAY OPERATIONAL SURVEILLANCE (Current 21-day Tail Risk: {cur_op}; "
+        f"Latest clear pass: {days_stale} days ago; Underlying Window Regime: {regime_profile}, {n_anom}/{n_tot} passes)"
+        if is_present
+        else f"HISTORICAL SITE CHARACTERIZATION & IRRS DESIGN REVIEW (Window Regime: {regime_profile}; "
+        f"Anomalous passes: {n_anom}/{n_tot}, {metrics.get('exceedance_pct', 0.0):.1f}%, "
+        f"Max streak: {metrics.get('max_consecutive_streak', 0)}; Peak date: {metrics.get('peak_event_date')}) — "
+        f"frame guidance around site design basis & historical operating experience, NOT a live plant emergency."
+    )
+
     deterministic_advisory = (
-        f"Deterministic Risk Verdict: {risk_level} ({primary_driver}). "
+        f"{eval_context}. "
         f"Cross-correlating NDCI ({metrics.get('max_ndci', 0):+.3f}, {max_ndci_z:+.2f}σ), "
         f"NDTI ({metrics.get('max_ndti', 0):+.3f}, {max_ndti_z:+.2f}σ), and "
         f"SST ({max_sst:.1f} °C, {max_sst_z:+.2f}σ) for {eco['water_body']} against "
@@ -883,8 +912,8 @@ STRICT RULES:
 
 SITE CONTEXT:
 - Site: {site_name} ({site_meta.get('type')}, {site_meta.get('cooling')})
+- Evaluation Mode: {eval_context}
 - Ecological profile: {eco['water_body']}; bio-hazard: {eco['bio_hazard']}; mitigation: {eco['mitigation_focus']}
-- Deterministic Verdict: {risk_level} | Driver: {primary_driver}
 - Metrics: NDCI max={metrics.get('max_ndci'):+.3f} ({max_ndci_z:+.2f}σ), NDTI max={metrics.get('max_ndti'):+.3f} ({max_ndti_z:+.2f}σ), SST max={max_sst:.1f}°C ({max_sst_z:+.2f}σ, P90={metrics.get('p90_sst', 0):.1f}°C), trophic_lag={metrics.get('trophic_lag_jellyfish_precursor_detected')}
 - Fixed Deterministic Card Statuses (DO NOT ALTER): {[c['status'] for c in base_cards]}
 
@@ -1314,6 +1343,12 @@ def generate_site_baseline_report(
         max_sst_zscore=max_sst_zscore,
     )
 
+    regime_info = compute_site_regime_profile(
+        clean_df,
+        end_date=date_range[1],
+        trophic_lag_detected=trophic_lag_detected,
+    )
+
     lat = float(site_meta.get("lat", 0.0))
     lon = float(site_meta.get("lon", 0.0))
     buffer_deg = float(site_meta.get("buffer_deg", 0.015))
@@ -1368,6 +1403,7 @@ def generate_site_baseline_report(
             float(clean_df["valid_water_coverage_pct"].mean()), 1
         ),
         "overall_scram_clogging_risk": overall_risk,
+        **regime_info,
     }
 
     report: Dict[str, Any] = {
