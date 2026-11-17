@@ -24,9 +24,12 @@ importlib.reload(_sat_mod)
 importlib.reload(_advisor_mod)
 
 from advisor_hook import (
+    answer_irrs_inspector_question,
     evaluate_pass_dual_gate,
     generate_site_baseline_report,
+    resolve_gemini_api_key,
     run_rag_regulatory_analysis,
+    synthesize_hybrid_rag_cards,
 )
 from config import (
     DEFAULT_CDSE_CLIENT_ID,
@@ -803,6 +806,49 @@ def _fetch_live_cached(
     return result_df, mon.last_warning
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _synthesize_rag_cards_cached(
+    site_name: str,
+    start_str: str,
+    end_str: str,
+    risk_level: str,
+    max_ndci: float,
+    max_ndti: float,
+    max_sst: float,
+    has_gemini_key: bool,
+    _report_dict: dict,
+    _site_meta: dict,
+    _explicit_gemini_key: str = "",
+) -> dict:
+    """24-hour cached Hybrid RAG synthesis for the 4 IAEA regulatory cards."""
+    return synthesize_hybrid_rag_cards(
+        report_dict=_report_dict,
+        site_meta=_site_meta,
+        explicit_gemini_key=_explicit_gemini_key or None,
+    )
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _answer_inspector_qa_cached(
+    question: str,
+    site_name: str,
+    start_str: str,
+    end_str: str,
+    risk_level: str,
+    has_gemini_key: bool,
+    _report_dict: dict,
+    _site_meta: dict,
+    _explicit_gemini_key: str = "",
+) -> dict:
+    """24-hour cached IRRS Inspector Q&A answer."""
+    return answer_irrs_inspector_question(
+        question=question,
+        report_dict=_report_dict,
+        site_meta=_site_meta,
+        explicit_gemini_key=_explicit_gemini_key or None,
+    )
+
+
 def main() -> None:
     # --- Sidebar Controls ---
     with st.sidebar:
@@ -922,6 +968,19 @@ def main() -> None:
             type="primary",
             use_container_width=True,
         )
+
+        gemini_env_key, gemini_source = resolve_gemini_api_key()
+        explicit_gemini_key = ""
+        with st.expander("🧠 Phase-2 AI RAG Settings (Optional)", expanded=False):
+            if gemini_source in ("st.secrets", "os.environ"):
+                st.caption("Gemini 2.5 Flash RAG: Connected via Protected Secrets.")
+            else:
+                explicit_gemini_key = st.text_input(
+                    "Gemini API Key (Optional)",
+                    value="",
+                    type="password",
+                    help="Optional: enables Gemini 2.5 Flash synthesis. Leave blank for offline Deterministic IAEA Corpus RAG.",
+                )
 
     # --- Execute Pipeline (Auto-triggers when parameters/dates change or button is clicked) ---
     query_signature = (
@@ -1195,16 +1254,37 @@ def main() -> None:
     )
 
     with tab_irrs:
-        st.markdown(
-            "Dual-Gate regulatory mapping generated via `advisor_hook.py` against "
-            "**IAEA SSR-1** (*Requirement 20: Biological Phenomena — Trophic Precursors*) and "
-            "**IAEA SSG-18** (*Section 5: Intake Blockage & Traveling Screen ΔP Monitoring*)."
+        active_gemini_key, _ = resolve_gemini_api_key(explicit_gemini_key)
+        rag_bundle = _synthesize_rag_cards_cached(
+            site_name=profile["site_name"],
+            start_str=report["report_metadata"]["analysis_period"]["start_date"],
+            end_str=report["report_metadata"]["analysis_period"]["end_date"],
+            risk_level=risk_info["overall_scram_clogging_risk"],
+            max_ndci=float(metrics["max_ndci"]),
+            max_ndti=float(metrics["max_ndti"]),
+            max_sst=float(metrics.get("max_sst", 0.0) or 0.0),
+            has_gemini_key=bool(active_gemini_key),
+            _report_dict=report,
+            _site_meta=site_meta,
+            _explicit_gemini_key=explicit_gemini_key,
         )
 
-        for item in report["iaea_regulatory_context"]["preliminary_irrs_checklist"]:
+        st.caption(f"🔎 **{rag_bundle['mode_badge']}**")
+        st.info(
+            f"🧠 **Contextual Regulatory Advisory:** {rag_bundle['ai_contextual_advisory']}",
+            icon="🏛️",
+        )
+
+        for item in rag_bundle["cards"]:
             status_tag = item["status"]
-            icon = "🚨" if "ACTION" in status_tag else ("⚠️" if "REVIEW" in status_tag else "✅")
+            icon = (
+                "🚨"
+                if "ACTION" in status_tag
+                else ("⚠️" if ("REVIEW" in status_tag or "WATCH" in status_tag) else "✅")
+            )
             with st.expander(f"{icon} [{status_tag}] {item['standard']}", expanded=True):
+                if item.get("cited_paragraphs"):
+                    st.caption(f"**Cited IAEA Clauses:** `{item['cited_paragraphs']}`")
                 st.markdown(f"**Satellite Empirical Finding:** {item['finding']}")
                 st.markdown(f"**IRRS Reviewer Verification Prompt:** *{item['irrs_reviewer_prompt']}*")
 
@@ -1219,13 +1299,43 @@ def main() -> None:
                 + ", ".join(f"`{d}`" for d in risk_info["moderate_risk_triggered_dates"])
             )
 
-        st.info(
-            "🧠 **Phase 2 AI Knowledge Management & RAG Plug-In Point (`advisor_hook.py`)**\n\n"
-            f"{run_rag_regulatory_analysis(report)}\n\n"
-            "*Architecture Note:* `advisor_hook.run_rag_regulatory_analysis(report_dict)` is isolated "
-            "so an LLM/RAG vector retriever over full IAEA Safety Standards and IRS operating experience "
-            "can be connected in Phase 2 with zero modifications to `satellite_engine.py` or `app.py`."
+        st.divider()
+        st.markdown("#### 💬 Ask the IAEA RAG Regulatory Advisor about this Site Screening")
+        preset_questions = [
+            "Why did the coupled optical-thermal metrics trigger this risk level?",
+            "What specific intake screen & backwash checks should an IRRS team request at this site?",
+            "How does IAEA SSR-1 Req. 20 apply to SMR deployment here?",
+        ]
+        q_cols = st.columns(3)
+        for idx, pq in enumerate(preset_questions):
+            with q_cols[idx]:
+                if st.button(pq, key=f"rag_preset_{idx}", use_container_width=True):
+                    st.session_state["irrs_qa_question"] = pq
+
+        user_q = st.text_input(
+            "Or enter a custom IRRS / NHSI regulatory question:",
+            value=st.session_state.get("irrs_qa_question", ""),
+            placeholder="e.g., How should traveling screen ΔP setpoints be verified for this water body?",
+            key="irrs_qa_input",
         )
+        active_q = (user_q or st.session_state.get("irrs_qa_question", "")).strip()
+        if active_q:
+            qa_resp = _answer_inspector_qa_cached(
+                question=active_q,
+                site_name=profile["site_name"],
+                start_str=report["report_metadata"]["analysis_period"]["start_date"],
+                end_str=report["report_metadata"]["analysis_period"]["end_date"],
+                risk_level=risk_info["overall_scram_clogging_risk"],
+                has_gemini_key=bool(active_gemini_key),
+                _report_dict=report,
+                _site_meta=site_meta,
+                _explicit_gemini_key=explicit_gemini_key,
+            )
+            st.caption(
+                f"Source: `{qa_resp['mode']}` | Retrieved Clauses: "
+                + ", ".join(f"`{c}`" for c in qa_resp["citations"])
+            )
+            st.markdown(qa_resp["answer"])
 
     with tab_export:
         st.markdown(
