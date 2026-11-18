@@ -1481,6 +1481,12 @@ def main() -> None:
         st.markdown("#### Structured NHSI & IRRS Baseline Payload (`JSON`)")
         st.json(report)
 
+    st.divider()
+    st.caption(
+        "Developed by **Federico Righi** · [LinkedIn](https://www.linkedin.com/in/fedrig/) · "
+        "federicorighi.99@gmail.com | Data source: Contains modified Copernicus Sentinel data 2026"
+    )
+
 
 if __name__ == "__main__":
     main()
