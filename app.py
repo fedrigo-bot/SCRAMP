@@ -140,15 +140,15 @@ def _apply_theme_css(dark_mode: bool) -> None:
         st.markdown(
             """
             <style>
-            /* 2010s Engineering / SCADA Soft Cool-Gray Light Mode */
+            /* 2010s Engineering / SCADA Soft Cool-Gray Light Mode (High Contrast) */
             .stApp {
                 background-color: #DCE2E8;
-                color: #111827;
+                color: #0F172A;
             }
             [data-testid="stSidebar"] {
                 background-color: #CBD3DC;
-                border-right: 2px solid #94A3B8;
-                color: #111827;
+                border-right: 2px solid #64748B;
+                color: #0F172A;
             }
             [data-testid="stSidebar"] p,
             [data-testid="stSidebar"] span,
@@ -157,31 +157,75 @@ def _apply_theme_css(dark_mode: bool) -> None:
             [data-testid="stSidebar"] h1,
             [data-testid="stSidebar"] h2,
             [data-testid="stSidebar"] h3 {
-                color: #111827 !important;
+                color: #0F172A !important;
             }
             [data-testid="stHeader"] {
-                background-color: rgba(220, 226, 232, 0.94);
-                border-bottom: 1px solid #94A3B8;
+                background-color: #CBD3DC !important;
+                border-bottom: 1.5px solid #64748B !important;
+            }
+            [data-testid="stHeader"] *,
+            [data-testid="stHeader"] svg {
+                color: #0F172A !important;
+                fill: #0F172A !important;
             }
             .stApp h1, .stApp h2, .stApp h3, .stApp h4,
             [data-testid="stMarkdownContainer"] p,
-            [data-testid="stMarkdownContainer"] li {
-                color: #111827;
-            }
-            .stApp code, .stApp pre {
-                background-color: #E8EDF2 !important;
+            [data-testid="stMarkdownContainer"] li,
+            [data-testid="stMarkdownContainer"] strong {
                 color: #0F172A !important;
-                border: 1px solid #94A3B8 !important;
+            }
+            /* High-contrast links (footer, citations, references) */
+            .stApp a,
+            [data-testid="stCaptionContainer"] a,
+            [data-testid="stMarkdownContainer"] a {
+                color: #0B4F9C !important;
+                font-weight: 600 !important;
+                text-decoration: underline !important;
+            }
+            .stApp a:hover,
+            [data-testid="stCaptionContainer"] a:hover {
+                color: #07356B !important;
+            }
+            /* Crisp captions (footer, version line, IAEA clauses) — override Streamlit 0.6 opacity */
+            [data-testid="stCaptionContainer"],
+            [data-testid="stCaptionContainer"] p,
+            [data-testid="stCaptionContainer"] span,
+            [data-testid="stCaptionContainer"] div,
+            [data-testid="stCaptionContainer"] strong {
+                color: #1E293B !important;
+                opacity: 1 !important;
+            }
+            /* Crisp horizontal dividers */
+            .stApp hr,
+            [data-testid="stSidebar"] hr {
+                border-color: #64748B !important;
+                opacity: 0.9 !important;
+            }
+            /* Help (?) tooltip icons */
+            .stApp [data-testid="stTooltipHoverTarget"] svg,
+            [data-testid="stSidebar"] [data-testid="stTooltipHoverTarget"] svg {
+                color: #1E293B !important;
+                stroke: #1E293B !important;
+                opacity: 1 !important;
+            }
+            /* High-contrast inline code badges */
+            .stApp code, .stApp pre,
+            [data-testid="stSidebar"] code {
+                background-color: #E2E8F0 !important;
+                color: #0F172A !important;
+                border: 1px solid #64748B !important;
                 border-radius: 4px;
                 padding: 0.12rem 0.4rem;
+                font-weight: 600 !important;
+                opacity: 1 !important;
             }
             /* Raised 2010s-style KPI Metric Panel Boxes */
             [data-testid="stMetric"] {
                 background-color: #EDF1F5 !important;
-                border: 1.5px solid #94A3B8 !important;
+                border: 1.5px solid #64748B !important;
                 border-radius: 6px !important;
                 padding: 0.70rem 0.85rem !important;
-                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12) !important;
+                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.14) !important;
             }
             [data-testid="stMetricLabel"] p,
             [data-testid="stMetricValue"] {
@@ -190,7 +234,7 @@ def _apply_theme_css(dark_mode: bool) -> None:
             [data-testid="stMetricDelta"] {
                 background-color: #D5DEE7 !important;
                 color: #0F172A !important;
-                border: 1px solid #94A3B8 !important;
+                border: 1px solid #64748B !important;
                 border-radius: 999px !important;
                 padding: 0.15rem 0.55rem !important;
             }
@@ -202,15 +246,12 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 fill: #0F172A !important;
                 color: #0F172A !important;
             }
-            [data-testid="stCaptionContainer"] {
-                color: #334155 !important;
-            }
             [data-testid="stRadio"] p,
             [data-testid="stRadio"] label,
             [data-testid="stWidgetLabel"] p,
             [data-testid="stTabs"] button p,
             [data-testid="stExpander"] summary p {
-                color: #111827 !important;
+                color: #0F172A !important;
             }
             /* Crisp, clearly outlined sidebar inputs, selectboxes & steppers */
             [data-testid="stSidebar"] [data-baseweb="select"] > div,
@@ -223,36 +264,45 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.10), 0 1px 1px rgba(255, 255, 255, 0.65) !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
-            [data-testid="stSidebar"] [data-baseweb="select"] > div > div,
+            [data-testid="stSidebar"] [data-baseweb="select"] div {
+                background-color: transparent !important;
+                color: #0F172A !important;
+                -webkit-text-fill-color: #0F172A !important;
+            }
             [data-testid="stSidebar"] input {
                 background-color: #F4F6F9 !important;
                 color: #0F172A !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
-            [data-testid="stSidebar"] [data-baseweb="select"] svg,
+            [data-testid="stSidebar"] [data-baseweb="select"] svg {
+                background-color: transparent !important;
+                fill: #0F172A !important;
+                color: #0F172A !important;
+            }
             [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
                 background-color: #D5DEE7 !important;
                 fill: #0F172A !important;
                 color: #0F172A !important;
-                border-color: #64748B !important;
+                border-color: #475569 !important;
             }
+            [data-testid="stSidebar"] [data-baseweb="checkbox"] > div:first-child,
             [data-testid="stSidebar"] [role="switch"] {
                 background-color: #64748B !important;
-                border: 1px solid #334155 !important;
+                border: 1.5px solid #334155 !important;
             }
             /* Distinct Expander Cards & Headers */
             [data-testid="stExpander"],
             [data-testid="stExpander"] details {
                 background-color: #EDF1F5 !important;
-                border: 1.5px solid #94A3B8 !important;
+                border: 1.5px solid #64748B !important;
                 border-radius: 6px !important;
-                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.10) !important;
+                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12) !important;
             }
             [data-testid="stExpander"] summary,
             [data-testid="stExpander"] details > summary {
-                background-color: #D0D8E2 !important;
+                background-color: #CBD5E1 !important;
                 color: #0F172A !important;
-                border-bottom: 1px solid #94A3B8 !important;
+                border-bottom: 1.5px solid #64748B !important;
             }
             [data-testid="stExpander"] summary svg {
                 fill: #0F172A !important;
@@ -262,7 +312,7 @@ def _apply_theme_css(dark_mode: bool) -> None:
             .stApp [data-testid="stAlert"],
             .stApp [data-testid="stAlert"] > div {
                 background-color: #D9E6F2 !important;
-                border: 1.5px solid #64748B !important;
+                border: 1.5px solid #475569 !important;
                 border-radius: 6px !important;
             }
             .stApp [data-testid="stAlert"] p,
@@ -273,8 +323,8 @@ def _apply_theme_css(dark_mode: bool) -> None:
             .stApp button[kind="secondary"] {
                 background-color: #EDF1F5 !important;
                 color: #0F172A !important;
-                border: 1.5px solid #64748B !important;
-                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+                border: 1.5px solid #475569 !important;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12) !important;
             }
             .stApp [data-testid="stTextInput"] input {
                 background-color: #F4F6F9 !important;
@@ -282,10 +332,15 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 border: 1.5px solid #475569 !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
+            .stApp [data-testid="stTextInput"] input::placeholder {
+                color: #475569 !important;
+                -webkit-text-fill-color: #475569 !important;
+                opacity: 1 !important;
+            }
             [data-testid="stJson"] {
                 background-color: #EDF1F5 !important;
                 color: #0F172A !important;
-                border: 1.5px solid #94A3B8 !important;
+                border: 1.5px solid #64748B !important;
                 border-radius: 6px;
                 padding: 0.5rem;
             }
