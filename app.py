@@ -140,13 +140,15 @@ def _apply_theme_css(dark_mode: bool) -> None:
         st.markdown(
             """
             <style>
+            /* 2010s Engineering / SCADA Soft Cool-Gray Light Mode */
             .stApp {
-                background-color: #F8FAFC;
-                color: #0F172A;
+                background-color: #DCE2E8;
+                color: #111827;
             }
             [data-testid="stSidebar"] {
-                background-color: #EEF2F6;
-                color: #0F172A;
+                background-color: #CBD3DC;
+                border-right: 2px solid #94A3B8;
+                color: #111827;
             }
             [data-testid="stSidebar"] p,
             [data-testid="stSidebar"] span,
@@ -155,31 +157,40 @@ def _apply_theme_css(dark_mode: bool) -> None:
             [data-testid="stSidebar"] h1,
             [data-testid="stSidebar"] h2,
             [data-testid="stSidebar"] h3 {
-                color: #0F172A !important;
+                color: #111827 !important;
             }
             [data-testid="stHeader"] {
-                background-color: rgba(248, 250, 252, 0.90);
+                background-color: rgba(220, 226, 232, 0.94);
+                border-bottom: 1px solid #94A3B8;
             }
             .stApp h1, .stApp h2, .stApp h3, .stApp h4,
             [data-testid="stMarkdownContainer"] p,
             [data-testid="stMarkdownContainer"] li {
-                color: #0F172A;
+                color: #111827;
             }
             .stApp code, .stApp pre {
-                background-color: #E2E8F0 !important;
+                background-color: #E8EDF2 !important;
                 color: #0F172A !important;
-                border: 1px solid #CBD5E1 !important;
-                border-radius: 5px;
+                border: 1px solid #94A3B8 !important;
+                border-radius: 4px;
                 padding: 0.12rem 0.4rem;
+            }
+            /* Raised 2010s-style KPI Metric Panel Boxes */
+            [data-testid="stMetric"] {
+                background-color: #EDF1F5 !important;
+                border: 1.5px solid #94A3B8 !important;
+                border-radius: 6px !important;
+                padding: 0.70rem 0.85rem !important;
+                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12) !important;
             }
             [data-testid="stMetricLabel"] p,
             [data-testid="stMetricValue"] {
                 color: #0F172A !important;
             }
             [data-testid="stMetricDelta"] {
-                background-color: #E2E8F0 !important;
+                background-color: #D5DEE7 !important;
                 color: #0F172A !important;
-                border: 1px solid #CBD5E1 !important;
+                border: 1px solid #94A3B8 !important;
                 border-radius: 999px !important;
                 padding: 0.15rem 0.55rem !important;
             }
@@ -192,82 +203,102 @@ def _apply_theme_css(dark_mode: bool) -> None:
                 color: #0F172A !important;
             }
             [data-testid="stCaptionContainer"] {
-                color: #475569 !important;
+                color: #334155 !important;
             }
             [data-testid="stRadio"] p,
             [data-testid="stRadio"] label,
             [data-testid="stWidgetLabel"] p,
             [data-testid="stTabs"] button p,
             [data-testid="stExpander"] summary p {
-                color: #0F172A !important;
+                color: #111827 !important;
             }
+            /* Crisp, clearly outlined sidebar inputs, selectboxes & steppers */
             [data-testid="stSidebar"] [data-baseweb="select"] > div,
             [data-testid="stSidebar"] [data-baseweb="input"],
             [data-testid="stSidebar"] [data-baseweb="base-input"] {
-                background-color: #FFFFFF !important;
+                background-color: #F4F6F9 !important;
                 color: #0F172A !important;
-                border: 1.5px solid #64748B !important;
-                border-radius: 6px !important;
-                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+                border: 1.5px solid #475569 !important;
+                border-radius: 5px !important;
+                box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.10), 0 1px 1px rgba(255, 255, 255, 0.65) !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
             [data-testid="stSidebar"] [data-baseweb="select"] > div > div,
             [data-testid="stSidebar"] input {
-                background-color: #FFFFFF !important;
+                background-color: #F4F6F9 !important;
                 color: #0F172A !important;
                 -webkit-text-fill-color: #0F172A !important;
             }
-            [data-testid="stSidebar"] [data-baseweb="select"] svg {
+            [data-testid="stSidebar"] [data-baseweb="select"] svg,
+            [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+                background-color: #D5DEE7 !important;
                 fill: #0F172A !important;
                 color: #0F172A !important;
+                border-color: #64748B !important;
             }
             [data-testid="stSidebar"] [role="switch"] {
-                background-color: #94A3B8 !important;
+                background-color: #64748B !important;
+                border: 1px solid #334155 !important;
             }
-            /* Expander cards & headers in Light Mode */
+            /* Distinct Expander Cards & Headers */
             [data-testid="stExpander"],
             [data-testid="stExpander"] details {
-                background-color: #FFFFFF !important;
-                border-color: #CBD5E1 !important;
+                background-color: #EDF1F5 !important;
+                border: 1.5px solid #94A3B8 !important;
+                border-radius: 6px !important;
+                box-shadow: 0 2px 4px rgba(15, 23, 42, 0.10) !important;
             }
             [data-testid="stExpander"] summary,
             [data-testid="stExpander"] details > summary {
-                background-color: #E2E8F0 !important;
+                background-color: #D0D8E2 !important;
                 color: #0F172A !important;
+                border-bottom: 1px solid #94A3B8 !important;
             }
             [data-testid="stExpander"] summary svg {
                 fill: #0F172A !important;
                 color: #0F172A !important;
             }
-            /* Main area info/warning banners, download buttons, and JSON viewer */
+            /* Main area info/warning banners, buttons, text inputs & JSON viewer */
             .stApp [data-testid="stAlert"],
             .stApp [data-testid="stAlert"] > div {
-                background-color: #EFF6FF !important;
-                border-color: #93C5FD !important;
+                background-color: #D9E6F2 !important;
+                border: 1.5px solid #64748B !important;
+                border-radius: 6px !important;
             }
             .stApp [data-testid="stAlert"] p,
             .stApp [data-testid="stAlert"] div {
-                color: #1E3A8A !important;
-            }
-            [data-testid="stDownloadButton"] button {
-                background-color: #FFFFFF !important;
                 color: #0F172A !important;
-                border: 1px solid #CBD5E1 !important;
+            }
+            [data-testid="stDownloadButton"] button,
+            .stApp button[kind="secondary"] {
+                background-color: #EDF1F5 !important;
+                color: #0F172A !important;
+                border: 1.5px solid #64748B !important;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+            }
+            .stApp [data-testid="stTextInput"] input {
+                background-color: #F4F6F9 !important;
+                color: #0F172A !important;
+                border: 1.5px solid #475569 !important;
+                -webkit-text-fill-color: #0F172A !important;
             }
             [data-testid="stJson"] {
-                background-color: #F1F5F9 !important;
+                background-color: #EDF1F5 !important;
                 color: #0F172A !important;
+                border: 1.5px solid #94A3B8 !important;
                 border-radius: 6px;
                 padding: 0.5rem;
             }
             [data-testid="stSidebar"] [data-testid="stAlert"],
             [data-testid="stSidebar"] [data-testid="stAlert"] > div,
             [data-testid="stSidebar"] [role="alert"] {
-                background-color: #ECFDF5 !important;
-                border-color: #6EE7B7 !important;
+                background-color: #D4EDDA !important;
+                border: 1.5px solid #2E7D32 !important;
+                border-radius: 6px !important;
             }
             [data-testid="stSidebar"] [data-testid="stAlert"] p {
-                color: #065F46 !important;
+                color: #1B5E20 !important;
+                font-weight: 600 !important;
             }
             [data-testid="stTextInput"] button,
             button[aria-label*="password"] {
@@ -628,25 +659,39 @@ def _build_dual_hazard_chart(
     fig.update_yaxes(title_text="NDTI ((B04-B03)/(B04+B03))", range=[y_min_ndti, y_max_ndti], row=2, col=1)
     fig.update_xaxes(title_text="Satellite Revisit Date (S2 MSI + S3 SLSTR)", row=3, col=1)
 
+    if not dark_mode:
+        fig.update_xaxes(
+            gridcolor="#CBD5E1",
+            linecolor="#64748B",
+            tickfont={"color": "#111827"},
+            title_font={"color": "#111827"},
+        )
+        fig.update_yaxes(
+            gridcolor="#CBD5E1",
+            linecolor="#64748B",
+            tickfont={"color": "#111827"},
+            title_font={"color": "#111827"},
+        )
     fig.update_layout(
         title={
             "text": f"Coupled Optical (Sentinel-2 L2A) + Thermal (SST) Hazard Time Series — {site_name}",
             "x": 0.0,
             "xanchor": "left",
-            "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
+            "font": {"color": "#FAFAFA" if dark_mode else "#111827", "size": 17},
         },
         height=930,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(22, 27, 34, 0.65)" if dark_mode else "rgba(255, 255, 255, 1.0)",
-        font={"color": "#FAFAFA" if dark_mode else "#1F2937"},
+        paper_bgcolor="rgba(0,0,0,0)" if dark_mode else "#E5EAF0",
+        plot_bgcolor="rgba(22, 27, 34, 0.65)" if dark_mode else "#F1F4F8",
+        font={"color": "#FAFAFA" if dark_mode else "#111827"},
         legend={
             "orientation": "h",
             "yanchor": "top",
             "y": -0.10,
             "xanchor": "center",
             "x": 0.5,
+            "font": {"color": "#FAFAFA" if dark_mode else "#111827"},
         },
         margin={"l": 60, "r": 30, "t": 75, "b": 115},
     )
@@ -759,12 +804,25 @@ def _build_zscore_hazard_chart(
             )
         )
 
+    if not dark_mode:
+        fig.update_xaxes(
+            gridcolor="#CBD5E1",
+            linecolor="#64748B",
+            tickfont={"color": "#111827"},
+            title_font={"color": "#111827"},
+        )
+        fig.update_yaxes(
+            gridcolor="#CBD5E1",
+            linecolor="#64748B",
+            tickfont={"color": "#111827"},
+            title_font={"color": "#111827"},
+        )
     fig.update_layout(
         title={
             "text": f"Standardized Robust Z-Score (MAD + IQR) — NDCI, NDTI & SST — {site_name}",
             "x": 0.0,
             "xanchor": "left",
-            "font": {"color": "#FAFAFA" if dark_mode else "#1F2937", "size": 17},
+            "font": {"color": "#FAFAFA" if dark_mode else "#111827", "size": 17},
         },
         yaxis_title="Robust Relative Anomaly (+σ above Site Median)",
         xaxis_title="Sentinel-2 L2A Revisit Date",
@@ -772,15 +830,16 @@ def _build_zscore_hazard_chart(
         height=535,
         hovermode="x unified",
         template="plotly_dark" if dark_mode else "plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(22, 27, 34, 0.65)" if dark_mode else "rgba(255, 255, 255, 1.0)",
-        font={"color": "#FAFAFA" if dark_mode else "#1F2937"},
+        paper_bgcolor="rgba(0,0,0,0)" if dark_mode else "#E5EAF0",
+        plot_bgcolor="rgba(22, 27, 34, 0.65)" if dark_mode else "#F1F4F8",
+        font={"color": "#FAFAFA" if dark_mode else "#111827"},
         legend={
             "orientation": "h",
             "yanchor": "top",
             "y": -0.22,
             "xanchor": "center",
             "x": 0.5,
+            "font": {"color": "#FAFAFA" if dark_mode else "#111827"},
         },
         margin={"l": 60, "r": 30, "t": 65, "b": 115},
     )
@@ -1333,6 +1392,7 @@ def main() -> None:
                 dark_mode=dark_mode,
             ),
             use_container_width=True,
+            theme=None,
         )
 
     if "Robust Z-Score" in chart_view or "Both" in chart_view:
@@ -1343,6 +1403,7 @@ def main() -> None:
                 dark_mode=dark_mode,
             ),
             use_container_width=True,
+            theme=None,
         )
 
     st.divider()
